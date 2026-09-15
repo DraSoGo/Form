@@ -1,0 +1,11 @@
+[Unit]
+Description=Daily Fitness backup
+
+[Timer]
+OnCalendar=*-*-* 03:30:00
+RandomizedDelaySec=15m
+Persistent=true
+Unit=fitness-backup.service
+
+[Install]
+WantedBy=timers.target

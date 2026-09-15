@@ -1,0 +1,12 @@
+[Unit]
+Description=Fitness isolated restore verification
+After=docker.service network-online.target
+
+[Service]
+Type=oneshot
+User=root
+WorkingDirectory=/srv/docker/apps/fitness
+ExecStart=/usr/bin/python3 /srv/docker/apps/fitness/ops/backup.py restore-test
+UMask=0077
+Nice=10
+TimeoutStartSec=2h

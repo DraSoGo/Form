@@ -1,0 +1,11 @@
+[Unit]
+Description=Weekly Fitness isolated restore verification
+
+[Timer]
+OnCalendar=Sun *-*-* 05:00:00
+RandomizedDelaySec=15m
+Persistent=true
+Unit=fitness-restore-test.service
+
+[Install]
+WantedBy=timers.target
