@@ -23,3 +23,6 @@ Django 5.2 LTS with server-rendered responsive HTML, small JavaScript enhancemen
 
 ## Open constraints
 Rotated AI keys not located: never install keys marked exposed in the request into production. AI unavailable state must remain usable with manual entry. Sudo unavailable so full firewall inspection and Funnel setup may need user action. Physical storage backing unverified. Public deployment must pass secure session and regression checks before exposure.
+
+## Audit addendum: privileged checks completed
+User supplied corrected credential; sudo succeeded. UFW active, incoming deny/outgoing allow/routed deny; SSH restricted to LAN and tailscale0 (plus named monitoring probes), app ports explicitly allowed from LAN/tailscale as appropriate. No new UFW rule needed for loopback-only Fitness with Funnel. Tailscale has no OperatorUser, so route changes need sudo. Earlier sudo constraint is resolved. Firewall state was inspected, not changed.
