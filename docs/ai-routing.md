@@ -20,7 +20,7 @@ Context bounds: 120 body readings, 12 sessions with 60 sets each, 60 equipment n
 
 ## Durable jobs and schedule
 
-Run `python manage.py coachworker`; `--once` executes one maintenance/claim cycle for operational smoke checks. Every 5 minutes maintenance checks schedules/trends and photo retention. Idle jobs are polled every 30 seconds. Default summaries deduplicate by user and local calendar date, after the profile's configured summary time. **End Day** uses the same date key. **Re-analyze Today** creates another job and a new analysis version. Changing a timezone affects future scheduling. Missed older days are not automatically backfilled.
+Run `python manage.py runworker`; `--once` executes one maintenance/claim cycle for operational smoke checks. Every 5 minutes maintenance checks schedules/trends and photo retention. Idle jobs are polled every 30 seconds. Default summaries deduplicate by user and local calendar date, after the profile's configured summary time. **End Day** uses the same date key. **Re-analyze Today** creates another job and a new analysis version. Changing a timezone affects future scheduling. Missed older days are not automatically backfilled.
 
 Workers use compare-and-swap claims and an 8-minute lease; interrupted leases may be reclaimed, with three executions maximum before manual retry. A fenced transactional completion ensures only the current claim can persist output; output and all suggestions commit together. External requests may repeat after a worker crash, so upstream billing cannot be guaranteed exactly once. Daily output versions and successful job output are protected from duplicate persistence.
 
