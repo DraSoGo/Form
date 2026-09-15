@@ -5,6 +5,7 @@ from pathlib import Path
 import tempfile
 import unittest
 from unittest.mock import patch
+from types import SimpleNamespace
 
 spec = importlib.util.spec_from_file_location('backup', Path(__file__).with_name('backup.py'))
 backup = importlib.util.module_from_spec(spec)
@@ -12,6 +13,67 @@ spec.loader.exec_module(backup)
 
 
 class BackupTests(unittest.TestCase):
+    def test_backup_seals_expected_database_before_resuming(self):
+        with tempfile.TemporaryDirectory() as directory:
+            app = Path(directory) / 'app'
+            root = Path(directory) / 'nas'
+            app.mkdir()
+            (root / 'snapshots').mkdir(parents=True)
+            (root / 'blobs').mkdir()
+            media = app / 'media'
+            media.mkdir()
+            for name in ['compose.yaml', '.env.example', 'Dockerfile', 'requirements.txt', 'requirements.lock']:
+                (app / name).write_text('sanitized')
+            state = {'table_counts': {'auth_user': 1}, 'migrations': ['core.0001'], 'columns': [], 'constraints': []}
+            calls = []
+            def run(command, **kwargs):
+                calls.append(command)
+                return SimpleNamespace(stdout=b'web\nworker\n' if 'ps' in command else b'commit123')
+            def get_state():
+                self.assertFalse(any('start' in command for command in calls))
+                return state
+            with patch.object(backup, 'APP', app), patch.object(backup, 'ROOT', root), patch.object(backup, 'MEDIA', media), patch.object(backup, 'run', side_effect=run), patch.object(backup, 'db'), patch.object(backup, 'database_state', side_effect=get_state):
+                result = backup.backup()
+                manifest = backup.verify(root / 'snapshots' / result['snapshot'])
+                self.assertEqual(manifest['database'], state)
+                self.assertEqual(manifest['format'], 2)
+                self.assertTrue(any('start' in command for command in calls))
+
+    def test_restore_mismatch_fails_and_cleans_temporary_database(self):
+        expected = {'table_counts': {'auth_user': 1}, 'migrations': ['core.0001'], 'columns': [], 'constraints': []}
+        for changed in [dict(expected, table_counts={'auth_user': 0}), dict(expected, migrations=['core.0002']), dict(expected, columns=['missing'])]:
+            with self.subTest(changed=changed), tempfile.TemporaryDirectory() as directory:
+                path = Path(directory) / 'snapshot'
+                path.mkdir()
+                (path / 'database.dump').write_bytes(b'dump')
+                with patch.object(backup, 'verify', return_value={'format': 2, 'database': expected, 'media': {}}), patch.object(backup, 'database_state', return_value=changed), patch.object(backup, 'db'), patch.object(backup, 'sql') as sql:
+                    with self.assertRaisesRegex(RuntimeError, 'differ from snapshot'):
+                        backup.restore_test(path)
+                    created = sql.call_args_list[0].args[0].split()[2].rstrip(';')
+                    self.assertRegex(created, r'^fitness_restore_[a-f0-9]{32}$')
+                    self.assertEqual(sql.call_args_list[-1].args[0], 'DROP DATABASE ' + created + ' WITH (FORCE);')
+
+    def test_failed_backup_resumes_only_originally_running_services(self):
+        for failure in [RuntimeError('dump failed'), InterruptedError('terminated')]:
+            with self.subTest(failure=failure), tempfile.TemporaryDirectory() as directory, patch.object(backup, 'ROOT', Path(directory)):
+                (Path(directory) / 'snapshots').mkdir()
+                with patch.object(backup, 'run', return_value=SimpleNamespace(stdout=b'web\ndb\n')) as run, patch.object(backup, 'db', side_effect=failure):
+                    with self.assertRaises(type(failure)):
+                        backup.backup()
+                    commands = [call.args[0] for call in run.call_args_list]
+                    self.assertEqual(commands[-2][-2:], ['stop', 'web'])
+                    self.assertEqual(commands[-1][-2:], ['start', 'web'])
+
+    def test_status_preserves_backup_freshness_across_verification_and_failure(self):
+        with tempfile.TemporaryDirectory() as directory, patch.object(backup, 'STATE', Path(directory) / 'status.json'):
+            backup.record_status({'status': 'backup_ok', 'at': 'first', 'snapshot': 'snapshot-one'})
+            backup.record_status({'status': 'verify_ok', 'at': 'second'})
+            backup.record_status({'status': 'failed', 'at': 'third'})
+            state = json.loads(backup.STATE.read_text())
+            self.assertEqual(state['last_backup_at'], 'first')
+            self.assertEqual(state['last_backup_snapshot'], 'snapshot-one')
+            self.assertEqual(state['status'], 'failed')
+
     def test_retention_keeps_daily_and_weekly(self):
         today = dt.datetime(2026, 9, 15)
         names = [(today - dt.timedelta(days=n)).strftime('%Y%m%dT%H%M%SZ') + '-1234abcd' for n in range(100)]

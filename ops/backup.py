@@ -39,6 +39,38 @@ def sql(statement, database=None):
     return db(args, input=statement.encode(), stdout=subprocess.PIPE).stdout.decode().strip()
 
 
+def database_state(database=None):
+    tables = sql("SELECT tablename FROM pg_tables WHERE schemaname='public' ORDER BY tablename;", database).splitlines()
+    if not {'django_migrations', 'auth_user'} <= set(tables) or not any(t.startswith('core_') for t in tables):
+        raise RuntimeError('Application schema missing')
+    counts = {}
+    for table in tables:
+        identifier = '"' + table.replace('"', '""') + '"'
+        counts[table] = int(sql('SELECT count(*) FROM public.' + identifier, database))
+    migrations = json.loads(sql("SELECT coalesce(json_agg(row_to_json(m) ORDER BY app,name), '[]'::json) FROM (SELECT app,name,applied FROM django_migrations) m;", database))
+    if not migrations:
+        raise RuntimeError('Application migrations empty')
+    columns = json.loads(sql("SELECT coalesce(json_agg(row_to_json(c) ORDER BY table_name,ordinal_position), '[]'::json) FROM (SELECT table_name,column_name,ordinal_position,data_type,udt_name,is_nullable,column_default FROM information_schema.columns WHERE table_schema='public') c;", database))
+    constraints = json.loads(sql("SELECT coalesce(json_agg(row_to_json(c) ORDER BY table_name,name), '[]'::json) FROM (SELECT r.relname AS table_name, con.conname AS name, pg_get_constraintdef(con.oid) AS definition FROM pg_constraint con JOIN pg_class r ON r.oid=con.conrelid JOIN pg_namespace n ON n.oid=r.relnamespace WHERE n.nspname='public') c;", database))
+    return {'table_counts': counts, 'migrations': migrations, 'columns': columns, 'constraints': constraints}
+
+
+def record_status(result):
+    try:
+        previous = json.loads(STATE.read_text())
+    except (FileNotFoundError, ValueError):
+        previous = {}
+    for field in ['last_backup_at', 'last_backup_snapshot', 'last_restore_test_at']:
+        if field in previous:
+            result[field] = previous[field]
+    if result['status'] == 'backup_ok':
+        result['last_backup_at'] = result['at']
+        result['last_backup_snapshot'] = result['snapshot']
+    elif result['status'] == 'restore_test_ok':
+        result['last_restore_test_at'] = result['at']
+    atomic_json(STATE, result)
+
+
 def digest(path):
     h = hashlib.sha256()
     with path.open('rb') as stream:
@@ -129,6 +161,7 @@ def backup():
             db(['sh', '-c', 'exec pg_dump -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Fc --no-owner --no-acl'], stdout=out)
             out.flush()
             os.fsync(out.fileno())
+        expected_database = database_state()
         media = {}
         for source in sorted(MEDIA.rglob('*')):
             if source.is_symlink():
@@ -147,12 +180,12 @@ def backup():
             elif digest(blob) != sha:
                 raise RuntimeError('Existing NAS blob corrupted')
             media[str(source.relative_to(MEDIA))] = sha
-        atomic_json(path / 'manifest.json', {'format': 1, 'created': stamp, 'media': media})
+        atomic_json(path / 'manifest.json', {'format': 2, 'created': stamp, 'media': media, 'database': expected_database})
     finally:
         if stopped:
             run(compose + ['start', *stopped])
     revision = run(['git', '-C', str(APP), 'rev-parse', 'HEAD'], stdout=subprocess.PIPE).stdout.decode().strip()
-    config = {'revision': revision, 'files': {name: (APP / name).read_text() for name in ['compose.yaml', '.env.example', 'Dockerfile', 'requirements.txt']}}
+    config = {'revision': revision, 'files': {name: (APP / name).read_text() for name in ['compose.yaml', '.env.example', 'Dockerfile', 'requirements.txt', 'requirements.lock']}}
     atomic_json(path / 'config.json', config)
     atomic_json(path / 'checksums.json', {name: digest(path / name) for name in ['database.dump', 'manifest.json', 'config.json']})
     final = path.with_name(stamp)
@@ -171,16 +204,12 @@ def restore_test(path):
         created = True
         with (path / 'database.dump').open('rb') as stream:
             db(['sh', '-c', 'exec pg_restore -U "$POSTGRES_USER" -d "$1" --no-owner --no-acl --exit-on-error', 'restore', temporary_db], stdin=stream)
-        tables = sql("SELECT tablename FROM pg_tables WHERE schemaname='public' ORDER BY tablename;", temporary_db).splitlines()
-        if not {'django_migrations', 'auth_user'} <= set(tables) or not any(t.startswith('core_') for t in tables):
-            raise RuntimeError('Restored application schema missing')
-        migrations = int(sql('SELECT count(*) FROM django_migrations;', temporary_db))
-        if migrations < 1:
-            raise RuntimeError('Restored migrations empty')
-        counts = {}
-        for table in tables:
-            identifier = '"' + table.replace('"', '""') + '"'
-            counts[table] = int(sql('SELECT count(*) FROM ' + identifier, temporary_db))
+        restored_database = database_state(temporary_db)
+        if manifest.get('format') != 2 or 'database' not in manifest:
+            raise RuntimeError('Snapshot lacks expected database state; create a new backup')
+        if restored_database != manifest['database']:
+            raise RuntimeError('Restored schema, table counts or migration state differ from snapshot')
+        counts = restored_database['table_counts']
         # Actually reconstruct media into isolated temporary local files and hash again.
         with tempfile.TemporaryDirectory(prefix='fitness-media-restore-') as folder:
             for name, sha in manifest['media'].items():
@@ -222,10 +251,10 @@ def main():
                 path = ROOT / 'snapshots' / name
                 result = restore_test(path) if args.command == 'restore-test' else {'status': 'verify_ok', 'media_files': len(verify(path)['media'])}
             result['at'] = dt.datetime.now(dt.timezone.utc).isoformat()
-            atomic_json(STATE, result)
+            record_status(result)
             print(json.dumps(result, sort_keys=True))
         except Exception as exc:
-            atomic_json(STATE, {'status': 'failed', 'command': args.command, 'at': dt.datetime.now(dt.timezone.utc).isoformat(), 'error_type': type(exc).__name__})
+            record_status({'status': 'failed', 'command': args.command, 'at': dt.datetime.now(dt.timezone.utc).isoformat(), 'error_type': type(exc).__name__})
             raise
 
 

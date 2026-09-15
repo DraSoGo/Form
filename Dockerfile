@@ -1,8 +1,8 @@
 FROM python:3.12-slim
 ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1
 WORKDIR /app
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt && useradd --uid 1000 --create-home fitness
+COPY requirements.lock .
+RUN pip install --no-cache-dir -r requirements.lock && useradd --uid 1000 --create-home fitness
 COPY . .
 RUN SECRET_KEY=build-only-not-for-runtime DEBUG=true python manage.py collectstatic --noinput && mkdir -p /app/media && chown 1000:1000 /app/media
 USER 1000:1000
