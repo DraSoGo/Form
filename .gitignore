@@ -1,0 +1,14 @@
+.env
+.env.*
+!.env.example
+secrets/
+.venv/
+__pycache__/
+*.pyc
+*.sqlite3
+.pytest_cache/
+media/
+staticfiles/
+.superpowers/
+test-results/
+playwright-report/
