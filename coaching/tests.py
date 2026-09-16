@@ -43,6 +43,9 @@ class CoachingTests(TestCase):
         self.assertEqual(provider,'china');self.assertEqual(mock.call_count,3)
         self.assertEqual(list(RequestAttempt.objects.order_by('sequence').values_list('status',flat=True)),['rate_limited','insufficient_credit','success'])
         self.assertEqual(result,SUMMARY)
+        system_prompt=mock.call_args.args[2]
+        self.assertIn('ตอบข้อความที่ผู้ใช้จะอ่านเป็นภาษาไทยทุกครั้ง',system_prompt)
+        self.assertIn('Keep JSON keys, enum values, identifiers, numbers',system_prompt)
     @patch('coaching.router.complete')
     def test_malformed_request_stops_failover(self,mock):
         self.candidates();mock.side_effect=ProviderError('invalid_request',False)
