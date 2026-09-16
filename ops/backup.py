@@ -106,8 +106,9 @@ def atomic_json(path, value):
 def mounted():
     if not os.path.ismount(MOUNT):
         raise RuntimeError('NAS mount absent; refusing all backup writes')
-    result = run(['findmnt', '-n', '-o', 'FSTYPE,SOURCE', '--target', str(MOUNT)], stdout=subprocess.PIPE).stdout.decode().strip()
-    if result != 'cifs   //192.168.1.38/server-backup' and result.split() != ['cifs', '//192.168.1.38/server-backup']:
+    result = run(['findmnt', '-n', '-o', 'FSTYPE,SOURCE', '--target', str(MOUNT)], stdout=subprocess.PIPE).stdout.decode()
+    mounts = [tuple(line.split()) for line in result.splitlines() if line.split()]
+    if ('cifs', '//192.168.1.38/server-backup') not in mounts:
         raise RuntimeError('Unexpected NAS mount source/type')
     if ROOT.is_symlink():
         raise RuntimeError('Backup root must not be a symlink')

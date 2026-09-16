@@ -100,6 +100,11 @@ class BackupTests(unittest.TestCase):
                 backup.mounted()
             run.assert_not_called()
 
+    def test_mount_accepts_systemd_automount_plus_expected_cifs(self):
+        output = b'autofs systemd-1\ncifs   //192.168.1.38/server-backup\n'
+        with tempfile.TemporaryDirectory() as directory, patch.object(backup, 'MOUNT', Path(directory)), patch.object(backup, 'ROOT', Path(directory) / 'Fitness'), patch.object(backup.os.path, 'ismount', return_value=True), patch.object(backup, 'run', return_value=SimpleNamespace(stdout=output)):
+            backup.mounted()
+
     def test_checksums_corruption_and_traversal(self):
         with tempfile.TemporaryDirectory() as directory, patch.object(backup, 'ROOT', Path(directory)):
             root = Path(directory)
