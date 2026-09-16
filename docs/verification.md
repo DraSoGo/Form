@@ -66,3 +66,17 @@ Status meanings:
 ## Secret handling
 
 The owner explicitly authorized installing the original MaxPlus keys on 2026-09-16. They are stored only in the server's mode-0600 runtime environment file and are not present in this repository. Runtime application/database secrets, VAPID keys, and initial account credentials remain in mode-0600 files under a mode-0700 directory.
+
+## Training activities deployment — 2026-09-16
+
+Verified against deployed application commit `83313e304b89412aa09fc0fe8859e0a03c30ec30`.
+
+- Exercise definitions support Strength and Cardio. Cardio plans and sessions record duration; strength retains sets, reps, load, RIR, and RPE.
+- Equipment is selected from the user's Settings inventory. Muscle metadata is optional at entry time and is completed by the configured AI exercise route when blank.
+- Exercise removal archives the definition so workout history remains intact. Food, body, sleep, steps, legacy cardio, sessions, strength sets, and cardio records have ownership-scoped deletion paths.
+- Body & recovery records daily steps. Existing legacy cardio entries remain visible and editable under Training.
+- Archive schema v2 exports and imports the new activity, step, cardio-session, and archive fields; v1 imports remain compatible.
+- SQLite and isolated PostgreSQL suites each passed all 85 tests. Django system checks, migration drift checks, JavaScript syntax checks, and Python compilation passed.
+- Production migrations `core.0003` and `coaching.0003` applied successfully. The final exercise AI probe returned aliases, one primary muscle, two secondary muscles, and a compound classification; temporary probe data was removed.
+- Pre-deploy backup `20260916T153330Z-7b16cff5` completed with five media files. Its isolated restore test passed at `2026-09-16T15:41:39Z`.
+- Public and loopback health checks passed. Fitness web and database containers are healthy, the worker is running, and all 21 existing sibling application containers remained running.
