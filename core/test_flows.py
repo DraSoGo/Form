@@ -310,3 +310,12 @@ class CoreFlowTests(TestCase):
         for path in paths:
             with self.subTest(path=path):
                 self.assertEqual(self.client.get(path).status_code, 200)
+
+    def test_dashboard_action_controls_use_spaced_groups(self):
+        response = self.client.get('/')
+        self.assertContains(
+            response,
+            '<div class="actions"><a class="button" href="/nutrition/new/">+ Log food</a><a href="/targets/">Set targets</a></div>',
+            html=True,
+        )
+        self.assertContains(response, '<div class="actions"><a class="button" href="/coach/">Open coach</a>', html=False)

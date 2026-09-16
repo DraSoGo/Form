@@ -122,6 +122,11 @@ class CoachingTests(TestCase):
         self.assertEqual(self.client.get('/coach/').status_code,200)
         self.assertEqual(self.client.get('/coach/settings/').status_code,200)
         self.assertEqual(self.client.get('/coach/request/daily/').status_code,405)
+
+    def test_coach_action_controls_use_spaced_groups(self):
+        self.client.force_login(self.user)
+        response=self.client.get('/coach/')
+        self.assertContains(response,'<div class="actions"><form class="action-form"',html=False)
     @patch('coaching.services.route')
     def test_photo_analysis_editable_and_changed_entry_protected(self,mock):
         from PIL import Image
