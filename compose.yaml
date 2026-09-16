@@ -1,0 +1,66 @@
+name: fitness
+x-app: &app
+  build: .
+  image: fitness:${FITNESS_IMAGE_TAG:-local}
+  restart: unless-stopped
+  env_file: /srv/docker/apps/fitness/secrets/runtime.env
+  environment:
+    POSTGRES_HOST: db
+    MEDIA_ROOT: /app/media
+  read_only: true
+  user: '1000:1000'
+  tmpfs:
+    - /tmp:size=64m,mode=1777
+  volumes:
+    - /srv/docker/apps/fitness/data/media:/app/media
+  cap_drop: [ALL]
+  security_opt: [no-new-privileges:true]
+  pids_limit: 100
+  logging: &logging
+    driver: json-file
+    options:
+      max-size: 10m
+      max-file: '3'
+  networks: [backend, outbound]
+  depends_on:
+    db:
+      condition: service_healthy
+services:
+  web:
+    <<: *app
+    ports: ['8095:8000']
+    mem_limit: 512m
+    cpus: 0.75
+    healthcheck:
+      test: [CMD, python, -c, "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=5)"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+  worker:
+    <<: *app
+    command: [python, manage.py, runworker]
+    mem_limit: 256m
+    cpus: 0.35
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    env_file: /srv/docker/apps/fitness/secrets/runtime.env
+    volumes: [pgdata:/var/lib/postgresql/data]
+    networks: [backend]
+    mem_limit: 384m
+    cpus: 0.5
+    pids_limit: 100
+    security_opt: [no-new-privileges:true]
+    logging: *logging
+    healthcheck:
+      test: [CMD-SHELL, 'pg_isready -U "$$POSTGRES_USER" -d "$$POSTGRES_DB"']
+      interval: 10s
+      timeout: 5s
+      retries: 10
+networks:
+  backend:
+    internal: true
+  outbound: {}
+volumes:
+  pgdata: {}

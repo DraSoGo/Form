@@ -1,0 +1,26 @@
+{
+  "oj": {
+    "status": 200
+  },
+  "nextcloud": {
+    "status": 200
+  },
+  "immich": {
+    "status": 200
+  },
+  "paperless": {
+    "status": 200
+  },
+  "homepage": {
+    "status": 200
+  },
+  "kuma": {
+    "status": 200
+  },
+  "beszel": {
+    "status": 200
+  },
+  "nextcloud_https": {
+    "status": 200
+  }
+}

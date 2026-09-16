@@ -1,0 +1,15 @@
+[Unit]
+Description=Fitness consistent database and incremental media NAS backup
+After=docker.service network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=root
+WorkingDirectory=/srv/docker/apps/fitness
+ExecStart=/usr/bin/python3 /srv/docker/apps/fitness/ops/backup.py backup
+UMask=0077
+Nice=10
+IOSchedulingClass=best-effort
+IOSchedulingPriority=7
+TimeoutStartSec=2h

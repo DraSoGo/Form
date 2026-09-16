@@ -1,0 +1,1 @@
+{% extends "core/base.html" %}{% block content %}<h1>{{ title }}</h1><form method="post" class="card">{% csrf_token %}{{ form.as_p }}<button>Save</button></form>{% if delete_kind %}<form method="post" action="/delete/{{ delete_kind }}/{{ object.pk }}/" class="card">{% csrf_token %}<button class="secondary">Delete</button></form>{% endif %}{% endblock %}

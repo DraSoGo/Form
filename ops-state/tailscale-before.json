@@ -1,0 +1,19 @@
+{
+  "TCP": {
+    "443": {
+      "HTTPS": true
+    }
+  },
+  "Web": {
+    "hp800-g5.tail985cfd.ts.net:443": {
+      "Handlers": {
+        "/": {
+          "Proxy": "http://192.168.1.48:8081"
+        }
+      }
+    }
+  },
+  "AllowFunnel": {
+    "hp800-g5.tail985cfd.ts.net:443": true
+  }
+}
