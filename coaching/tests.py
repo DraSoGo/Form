@@ -181,6 +181,7 @@ class AdapterTests(SimpleTestCase):
     def test_exercise_metadata_schema_is_bounded(self):
         self.assertEqual(ExerciseMetadata.model_validate(EXERCISE).classification,'compound')
         with self.assertRaises(SchemaError): ExerciseMetadata.model_validate({**EXERCISE,'classification':'unknown'})
+        with self.assertRaises(SchemaError): ExerciseMetadata.model_validate({**EXERCISE,'primary_muscles':[]})
     @patch('coaching.providers.request')
     def test_each_protocol_image_payload_and_extraction(self,mock):
         samples={'messages':{'content':[{'type':'text','text':'ok'}]},'responses':{'output':[{'content':[{'type':'output_text','text':'ok'}]}]},'chat':{'choices':[{'message':{'content':'ok'}}]}}
