@@ -235,7 +235,7 @@ class CoreFlowTests(TestCase):
         response = self.client.get(f'/photos/{entry.pk}/')
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response['Cache-Control'], 'private, no-store')
-        response.close()
+        self.assertTrue(b''.join(response.streaming_content))
         self.assertEqual(self.client.post(f'/photos/{entry.pk}/delete/').status_code, 302)
         entry.refresh_from_db()
         self.assertEqual((entry.image, entry.image_status, entry.calories), ('', 'deleted', 500))
