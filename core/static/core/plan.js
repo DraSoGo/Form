@@ -11,6 +11,10 @@ days.forEach((day, i) => {
   label.textContent = day;
   const input = document.createElement('input');
   input.dataset.weekday = i;
+  input.id = `weekday-${i}`;
+  input.name = `weekday-${i}`;
+  input.autocomplete = 'off';
+  label.htmlFor = input.id;
   input.value = existing.schedule_type === 'fixed' ? existing.schedule?.[String(i)] || 'Rest' : 'Rest';
   input.maxLength = 80;
   label.append(input);
@@ -45,8 +49,10 @@ visibility();
 function addRow(data = {}, focus = false) {
   const fragment = document.querySelector('#plan-row-template').content.cloneNode(true);
   const row = fragment.querySelector('.plan-row');
+  const rowIndex = rows.children.length;
   row.querySelector('[data-field="day"]').value = Object.values(scheduleValue()).find(day => day !== 'Rest') || 'Workout';
   row.querySelectorAll('[data-field]').forEach(input => {
+    input.name = `exercise-${rowIndex}-${input.dataset.field}`;
     if (data[input.dataset.field] != null) input.value = data[input.dataset.field];
   });
   row.querySelector('.remove-row').addEventListener('click', () => {
