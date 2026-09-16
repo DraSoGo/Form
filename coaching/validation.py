@@ -33,9 +33,13 @@ def validate_change(user,change):
         if not isinstance(exercises,list) or len(exercises)>100: raise ValidationError('Invalid exercise list.')
         for item in exercises:
             if not isinstance(item,dict): raise ValidationError('Invalid exercise.')
-            try: exists=Exercise.objects.filter(pk=item.get('exercise'),user=user).exists()
-            except (ValueError,ValidationError): exists=False
-            if not exists: raise ValidationError('Unknown exercise.')
+            try: exercise=Exercise.objects.get(pk=item.get('exercise'),user=user,archived=False)
+            except (Exercise.DoesNotExist,ValueError,ValidationError): raise ValidationError('Unknown exercise.')
+            if exercise.activity_type=='cardio':
+                if set(item)-{'exercise','day','minutes','order','notes'}: raise ValidationError('Cardio uses duration only.')
+                if type(item.get('minutes')) is not int or not 1<=item['minutes']<=1440: raise ValidationError('Invalid cardio duration.')
+                if type(item.get('order',1)) is not int or not 0<=item.get('order',1)<=100: raise ValidationError('Invalid exercise value.')
+                continue
             for key,low,high,default in [('sets',1,30,3),('rep_min',1,100,8),('rep_max',1,100,12),('rest',0,3600,90),('order',0,100,1)]:
                 value=item.get(key,default)
                 if not isinstance(value,int) or isinstance(value,bool) or not low<=value<=high: raise ValidationError('Invalid exercise value.')

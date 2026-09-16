@@ -12,9 +12,13 @@ from django.db import transaction
 from django.db.models import JSONField
 from . import models
 
-CORE_MODELS = [models.Profile, models.BodyMeasurement, models.SleepEntry, models.CardioEntry,
+V1_CORE_MODELS = [models.Profile, models.BodyMeasurement, models.SleepEntry, models.CardioEntry,
     models.Equipment, models.NutritionTarget, models.FoodEntry, models.FoodLibrary,
     models.MealTemplate, models.Exercise, models.WorkoutPlan, models.WorkoutSession, models.WorkoutSet]
+CORE_MODELS = [models.Profile, models.BodyMeasurement, models.SleepEntry, models.CardioEntry,
+    models.StepEntry, models.Equipment, models.NutritionTarget, models.FoodEntry, models.FoodLibrary,
+    models.MealTemplate, models.Exercise, models.WorkoutPlan, models.WorkoutSession,
+    models.WorkoutSet, models.WorkoutCardio]
 
 
 def archive_models():
@@ -27,7 +31,7 @@ def archive_models():
 def export_archive(user):
     records = []
     for model in archive_models():
-        lookup = {'session__user': user} if model is models.WorkoutSet else {'user': user}
+        lookup = {'session__user': user} if model in (models.WorkoutSet, models.WorkoutCardio) else {'user': user}
         items = json.loads(serializers.serialize('json', model.objects.filter(**lookup)))
         for item in items:
             item['fields'].pop('user', None)
@@ -39,7 +43,7 @@ def export_archive(user):
                 item['fields']['status'] = 'archived'
                 item['fields']['lease_until'] = None
         records.extend(items)
-    return {'schema_version': 1, 'records': records}
+    return {'schema_version': 2, 'records': records}
 
 
 def _reference(label, value, keys):
@@ -65,9 +69,15 @@ def _plan(values, keys):
     if not isinstance(exercises, list) or len(exercises) > 100:
         raise ValidationError('Invalid plan exercises.')
     for item in exercises:
-        if not isinstance(item, dict) or set(item) - {'exercise', 'day', 'sets', 'rep_min', 'rep_max', 'rest', 'order', 'rir', 'rpe', 'notes'}:
+        if not isinstance(item, dict) or set(item) - {'exercise', 'day', 'sets', 'rep_min', 'rep_max', 'rest', 'order', 'rir', 'rpe', 'notes', 'minutes'}:
             raise ValidationError('Invalid exercise prescription.')
         _reference('core.exercise', item.get('exercise'), keys)
+        if 'minutes' in item:
+            if set(item) - {'exercise', 'day', 'minutes', 'order', 'notes'} or type(item['minutes']) is not int or not 1 <= item['minutes'] <= 1440:
+                raise ValidationError('Invalid cardio prescription.')
+            if type(item.get('order', 1)) is not int or not 0 <= item.get('order', 1) <= 100:
+                raise ValidationError('Invalid cardio order.')
+            continue
         for key, low, high, default in [('sets', 1, 30, 3), ('rep_min', 1, 100, 8), ('rep_max', 1, 100, 12), ('rest', 0, 3600, 90), ('order', 0, 100, 1)]:
             value = item.get(key, default)
             if type(value) is not int or not low <= value <= high:
@@ -132,6 +142,8 @@ def _semantics(obj, keys, objects):
                 raise ValidationError('Invalid job metadata.')
             if 'entry' in obj.payload:
                 _reference('core.foodentry', obj.payload['entry'], keys)
+            if 'exercise' in obj.payload:
+                _reference('core.exercise', obj.payload['exercise'], keys)
             if obj.result:
                 _analysis_content(obj.task, obj.result, keys)
         elif label == 'coaching.analysis':
@@ -178,8 +190,9 @@ def _unique(objects):
 
 
 def validate_archive(payload, user, *, keep_profile=False):
-    if not isinstance(payload, dict) or set(payload) != {'schema_version', 'records'} or type(payload['schema_version']) is not int or payload['schema_version'] != 1:
-        raise ValidationError('Unsupported archive schema; expected schema_version 1 and records.')
+    if not isinstance(payload, dict) or set(payload) != {'schema_version', 'records'} or type(payload['schema_version']) is not int or payload['schema_version'] not in (1, 2):
+        raise ValidationError('Unsupported archive schema; expected schema_version 1 or 2 and records.')
+    version = payload['schema_version']
     records = payload['records']
     if not isinstance(records, list) or len(records) > 50000:
         raise ValidationError('Archive must contain at most 50,000 records.')
@@ -187,7 +200,8 @@ def validate_archive(payload, user, *, keep_profile=False):
         json.dumps(payload, allow_nan=False)
     except (TypeError, ValueError, RecursionError) as exc:
         raise ValidationError('Archive contains invalid JSON values.') from exc
-    allowed = {m._meta.label_lower: m for m in archive_models()}
+    allowed_models = archive_models() if version == 2 else [*V1_CORE_MODELS, *[m for m in archive_models() if m._meta.app_label == 'coaching']]
+    allowed = {m._meta.label_lower: m for m in allowed_models}
     keys = set()
     prepared = []
     skip_profile = keep_profile is True and models.Profile.objects.filter(user=user).exists()
@@ -209,10 +223,13 @@ def validate_archive(payload, user, *, keep_profile=False):
         if key in keys or (not skipping and model.objects.filter(pk=pk).exists()):
             raise ValidationError('Duplicate record ID. Import never overwrites existing data.')
         keys.add(key)
-        expected = {f.name for f in model._meta.fields} - {'id', 'user'}
-        if set(record['fields']) != expected:
-            raise ValidationError('Missing or unknown fields for ' + record['model'])
         fields = {**record['fields']}
+        if version == 1 and model is models.Exercise:
+            fields.setdefault('activity_type', 'strength')
+            fields.setdefault('archived', False)
+        expected = {f.name for f in model._meta.fields} - {'id', 'user'}
+        if set(fields) != expected:
+            raise ValidationError('Missing or unknown fields for ' + record['model'])
         if 'user' in {f.name for f in model._meta.fields}:
             fields['user'] = user.pk
         if model is models.Profile:

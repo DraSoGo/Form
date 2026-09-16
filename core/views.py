@@ -97,7 +97,7 @@ def body(request):
             "form": form,
             "measurements": BodyMeasurement.objects.filter(user=request.user)[:100],
             "sleep": SleepEntry.objects.filter(user=request.user)[:14],
-            "cardio": CardioEntry.objects.filter(user=request.user)[:14],
+            "steps": StepEntry.objects.filter(user=request.user)[:30],
         },
     )
 
@@ -107,6 +107,7 @@ def generic_edit(request, kind, pk=None):
         "body": (BodyMeasurement, BodyForm, "Body measurement"),
         "sleep": (SleepEntry, SleepForm, "Sleep"),
         "cardio": (CardioEntry, CardioForm, "Cardio"),
+        "step": (StepEntry, StepForm, "Steps"),
         "equipment": (Equipment, EquipmentForm, "Equipment"),
         "exercise": (Exercise, ExerciseForm, "Exercise"),
         "library": (FoodLibrary, LibraryForm, "Saved food"),
@@ -115,7 +116,10 @@ def generic_edit(request, kind, pk=None):
         raise Http404
     model, form_class, title = mapping[kind]
     instance = get_object_or_404(model, pk=pk, user=request.user) if pk else None
-    form = form_class(request.POST or None, instance=instance)
+    form_kwargs = {"instance": instance}
+    if kind == "exercise":
+        form_kwargs["user"] = request.user
+    form = form_class(request.POST or None, **form_kwargs)
     if request.method == "POST" and form.is_valid():
         obj = form.save(commit=False)
         obj.user = request.user
@@ -140,6 +144,9 @@ def generic_edit(request, kind, pk=None):
                 )
             else:
                 obj.save()
+                if "coaching" in settings.INSTALLED_APPS:
+                    from coaching.services import enqueue_exercise
+                    enqueue_exercise(request.user, obj)
                 return redirect("/workouts/")
         else:
             obj.save()
@@ -153,7 +160,9 @@ def generic_edit(request, kind, pk=None):
     return render(
         request,
         "core/form.html",
-        {"form": form, "title": ("Edit " if pk else "Add ") + title},
+        {"form": form, "title": ("Edit " if pk else "Add ") + title,
+         "delete_kind": kind if pk and kind not in ("equipment", "exercise") else None,
+         "object": instance},
     )
 
 
@@ -161,6 +170,35 @@ def generic_edit(request, kind, pk=None):
 def equipment_delete(request, pk):
     get_object_or_404(Equipment, pk=pk, user=request.user).delete()
     return redirect("/settings/")
+
+
+@require_POST
+def record_delete(request, kind, pk):
+    mapping = {
+        "body": (BodyMeasurement, "/body/"),
+        "sleep": (SleepEntry, "/body/"),
+        "step": (StepEntry, "/body/"),
+        "cardio": (CardioEntry, "/workouts/"),
+        "food": (FoodEntry, "/nutrition/"),
+        "library": (FoodLibrary, "/nutrition/"),
+        "template": (MealTemplate, "/nutrition/"),
+        "session": (WorkoutSession, "/workouts/"),
+    }
+    if kind == "set":
+        item = get_object_or_404(WorkoutSet, pk=pk, session__user=request.user)
+        redirect_to = "/workouts/session/" + str(item.session_id) + "/"
+    elif kind == "workout-cardio":
+        item = get_object_or_404(WorkoutCardio, pk=pk, session__user=request.user)
+        redirect_to = "/workouts/session/" + str(item.session_id) + "/"
+    elif kind in mapping:
+        model, redirect_to = mapping[kind]
+        item = get_object_or_404(model, pk=pk, user=request.user)
+    else:
+        raise Http404
+    if isinstance(item, FoodEntry) and item.image:
+        delete_image(item)
+    item.delete()
+    return redirect(redirect_to)
 
 
 def nutrition(request):
@@ -329,7 +367,9 @@ def workouts(request):
             "plan": plan,
             "plans": WorkoutPlan.objects.filter(user=request.user)[:10],
             "sessions": WorkoutSession.objects.filter(user=request.user)[:30],
-            "exercises": Exercise.objects.filter(user=request.user),
+            "exercises": Exercise.objects.filter(user=request.user, archived=False),
+            "archived_exercises": Exercise.objects.filter(user=request.user, archived=True),
+            "legacy_cardio": CardioEntry.objects.filter(user=request.user)[:30],
             "volume": weekly_volume(request.user),
         },
     )
@@ -355,7 +395,7 @@ def plan_edit(request):
         {
             "form": form,
             "plan": current,
-            "exercises": Exercise.objects.filter(user=request.user),
+            "exercises": Exercise.objects.filter(user=request.user, archived=False),
             "plan_data": plan_payload(current),
         },
     )
@@ -379,15 +419,22 @@ def session_start(request):
 
 def session_detail(request, pk):
     session = get_object_or_404(WorkoutSession, pk=pk, user=request.user)
-    form = SetForm(request.POST or None)
-    form.fields["exercise"].queryset = Exercise.objects.filter(user=request.user)
+    form = SetForm(request.POST or None if request.POST.get("activity") != "cardio" else None)
+    cardio_form = CardioLogForm(request.POST or None if request.POST.get("activity") == "cardio" else None)
+    form.fields["exercise"].queryset = Exercise.objects.filter(user=request.user, archived=False, activity_type="strength")
+    cardio_form.fields["exercise"].queryset = Exercise.objects.filter(user=request.user, archived=False, activity_type="cardio")
     if request.method == "POST":
         if request.POST.get("action") == "finish":
             session.finished_at = timezone.now()
             session.notes = request.POST.get("notes", "")[:4000]
             session.save()
             return redirect("/workouts/")
-        if form.is_valid():
+        if request.POST.get("activity") == "cardio" and cardio_form.is_valid():
+            obj = cardio_form.save(commit=False)
+            obj.session = session
+            obj.save()
+            return redirect(request.path)
+        if request.POST.get("activity") != "cardio" and form.is_valid():
             obj = form.save(commit=False)
             obj.session = session
             obj.save()
@@ -401,7 +448,9 @@ def session_detail(request, pk):
         {
             "session": session,
             "sets": session.sets.select_related("exercise"),
+            "cardio": session.cardio.select_related("exercise"),
             "form": form,
+            "cardio_form": cardio_form,
             "last": last,
             "previous": last.sets.select_related("exercise") if last else [],
         },
@@ -422,6 +471,16 @@ def set_edit(request, pk):
     )
 
 
+def cardio_edit(request, pk):
+    item = get_object_or_404(WorkoutCardio, pk=pk, session__user=request.user)
+    form = CardioLogForm(request.POST or None, instance=item)
+    form.fields["exercise"].queryset = Exercise.objects.filter(user=request.user, activity_type="cardio")
+    if request.method == "POST" and form.is_valid():
+        form.save()
+        return redirect("/workouts/session/" + str(item.session_id) + "/")
+    return render(request, "core/form.html", {"form": form, "title": "Edit cardio · " + item.exercise.name})
+
+
 @require_POST
 def set_complete(request, pk):
     item = get_object_or_404(WorkoutSet, pk=pk, session__user=request.user)
@@ -430,6 +489,22 @@ def set_complete(request, pk):
     return redirect(
         "/workouts/session/" + str(item.session_id) + "/?rest=" + str(item.rest_seconds)
     )
+
+
+@require_POST
+def cardio_complete(request, pk):
+    item = get_object_or_404(WorkoutCardio, pk=pk, session__user=request.user)
+    item.completed = not item.completed
+    item.save(update_fields=["completed"])
+    return redirect("/workouts/session/" + str(item.session_id) + "/")
+
+
+@require_POST
+def exercise_archive(request, pk):
+    item = get_object_or_404(Exercise, pk=pk, user=request.user)
+    item.archived = True
+    item.save(update_fields=["archived"])
+    return redirect("/workouts/")
 
 
 def trends(request):

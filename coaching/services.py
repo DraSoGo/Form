@@ -41,6 +41,16 @@ def enqueue_food(user,entry):
     if not entry.image: raise ValidationError('This entry has no retained photograph.')
     return enqueue(user,'food',{'entry':str(entry.pk),'snapshot':food_snapshot(entry)})
 
+def exercise_snapshot(exercise):
+    fields=('name','activity_type','equipment','aliases','primary_muscles','secondary_muscles','classification')
+    return hashlib.sha256(json.dumps({k:getattr(exercise,k) for k in fields},sort_keys=True).encode()).hexdigest()
+
+def enqueue_exercise(user,exercise):
+    if exercise.user_id!=user.pk: raise ValidationError('Unknown exercise.')
+    if exercise.aliases and exercise.primary_muscles and exercise.classification:
+        return None
+    return enqueue(user,'exercise',{'exercise':str(exercise.pk),'snapshot':exercise_snapshot(exercise)},f'exercise:{exercise.pk}:{exercise_snapshot(exercise)}')
+
 @transaction.atomic
 def decide(user,suggestion_id,accept):
     s=Suggestion.objects.select_for_update().get(pk=suggestion_id,user=user)
@@ -89,7 +99,7 @@ def claim_job():
 def run_job(job):
     try:
         day=date.fromisoformat(job.payload['date']) if 'date' in job.payload else local_now(job.user).date()
-        context=build_context(job.user,job.task,day)
+        context=build_context(job.user,job.task,day) if job.task!='exercise' else {}
         prompt=job.payload.get('message','')
         image=None
         if job.task=='body': prompt=json.dumps(job.payload.get('triggers',[]))
@@ -105,6 +115,10 @@ def run_job(job):
                 image=('image/jpeg',buf.getvalue())
             prompt=entry.note[:2000]
             context=build_context(job.user,'food',day,query=entry.name+' '+entry.note)
+        if job.task=='exercise':
+            exercise=m.Exercise.objects.get(pk=job.payload['exercise'],user=job.user)
+            context={'exercise':{'name':exercise.name,'activity_type':exercise.activity_type,'equipment':exercise.equipment}}
+            prompt='Fill conventional exercise aliases and muscle metadata. Classify the movement as compound or isolation.'
         result,provider,model=route(job.task,context,prompt,image,job=job)
         with transaction.atomic():
             # Serialize version allocation and acceptance through the same user row.
@@ -119,6 +133,12 @@ def run_job(job):
                 entry.quantity='; '.join(f['amount'] for f in result['foods'])[:120]
                 entry.uncertainty=f"{result['confidence']} confidence; {result['calories_low']}-{result['calories_high']} kcal. {result['uncertainty']}"
                 entry.state='ai_estimated';entry.full_clean();entry.save()
+            if job.task=='exercise':
+                exercise=m.Exercise.objects.select_for_update().get(pk=job.payload['exercise'],user=job.user)
+                if exercise_snapshot(exercise)!=job.payload['snapshot']: raise ProviderError('exercise_changed_review_required',False)
+                for field in ('aliases','primary_muscles','secondary_muscles','classification'):
+                    if not getattr(exercise,field): setattr(exercise,field,result[field])
+                exercise.full_clean();exercise.save()
             version=(Analysis.objects.filter(user=job.user,task=job.task,local_date=day).aggregate(v=Max('version'))['v'] or 0)+1
             Analysis.objects.create(user=job.user,job=job,task=job.task,local_date=day,version=version,content=result)
             for change in result.get('suggestions',[]):
@@ -129,6 +149,6 @@ def run_job(job):
             locked.result=result;locked.provider=provider;locked.model=model;locked.status='done';locked.error='';locked.lease_until=None;locked.save()
         if job.task=='daily': notify(job.user,'daily')
         if result.get('suggestions'): notify(job.user,'suggestion')
-    except (ProviderError,ValidationError,m.FoodEntry.DoesNotExist,OSError,ValueError) as exc:
+    except (ProviderError,ValidationError,m.FoodEntry.DoesNotExist,m.Exercise.DoesNotExist,OSError,ValueError) as exc:
         code=exc.code if isinstance(exc,ProviderError) else 'invalid_or_changed_data'
         Job.objects.filter(pk=job.pk,status='running',attempts=job.attempts).update(status='failed',error=code,lease_until=None)

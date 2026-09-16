@@ -19,12 +19,14 @@ def model_form(model,fields=None):
 BodyForm=model_form(BodyMeasurement)
 SleepForm=model_form(SleepEntry)
 CardioForm=model_form(CardioEntry)
+StepForm=model_form(StepEntry)
 EquipmentForm=model_form(Equipment)
 TargetForm=model_form(NutritionTarget,NUTRIENT_FIELDS if False else ['calories','protein','carbs','fat','fiber'])
 FoodForm=model_form(FoodEntry,['recorded_at','name','quantity','calories','protein','carbs','fat','fiber','sugar','sodium','note','state'])
 LibraryForm=model_form(FoodLibrary)
 ExerciseForm=model_form(Exercise)
 SetForm=model_form(WorkoutSet,['exercise','order','weight','reps','rir','rpe','set_type','completed','rest_seconds','failure','superset','notes'])
+CardioLogForm=model_form(WorkoutCardio,['exercise','order','minutes','completed','notes'])
 class ProfileForm(StyledModelForm):
     class Meta:model=Profile;exclude=['id','created_at','user']
     def clean_timezone(self):
@@ -62,12 +64,22 @@ class CommaListField(forms.CharField):
 
 class ExerciseForm(StyledModelForm):
     aliases = CommaListField(required=False, help_text='Separate alternate names with commas.')
-    primary_muscles = CommaListField(help_text='For example: Chest, Triceps')
+    primary_muscles = CommaListField(required=False, help_text='Optional. AI can fill this after saving.')
     secondary_muscles = CommaListField(required=False)
+
+    def __init__(self, *args, user=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        choices = [('', 'No equipment')]
+        if user is not None:
+            choices += [(name, name) for name in Equipment.objects.filter(user=user).values_list('name', flat=True)]
+        current = self.instance.equipment if self.instance and self.instance.pk else ''
+        if current and current not in dict(choices):
+            choices.append((current, current + ' (not in Settings)'))
+        self.fields['equipment'] = forms.ChoiceField(choices=choices, required=False)
 
     class Meta:
         model = Exercise
-        exclude = ['id', 'created_at', 'user']
+        exclude = ['id', 'created_at', 'user', 'archived']
 
 class FoodForm(FoodForm):
     name = forms.CharField(max_length=160, required=False, label='Food name (optional for photos)')

@@ -28,7 +28,7 @@ def build_context(user,task,date=None,query=""):
         return context
     plan=active_plan(user)
     if plan: context['plan']={'version':plan.version,'values':plan_payload(plan)}
-    context['exercise_library']=list(m.Exercise.objects.filter(user=user).values('id','name','equipment','primary_muscles')[:150])
+    context['exercise_library']=list(m.Exercise.objects.filter(user=user,archived=False).values('id','name','activity_type','equipment','primary_muscles','secondary_muscles','classification')[:150])
     context['equipment']=list(m.Equipment.objects.filter(user=user).values_list('name',flat=True)[:60])
     context['windows']={}
     tz=ZoneInfo(profile.timezone)
@@ -40,7 +40,8 @@ def build_context(user,task,date=None,query=""):
         totals=foods.aggregate(**{k:Sum(k) for k in ('calories','protein','carbs','fat','fiber')})
         sleeps=m.SleepEntry.objects.filter(user=user,date__gte=start.date(),date__lte=date)
         logged_days=len({r.astimezone(tz).date() for r in foods.values_list('recorded_at',flat=True)})
-        context['windows'][str(days)]={'nutrition_totals':totals,'nutrition_daily_average':{k:float(v or 0)/logged_days if logged_days else None for k,v in totals.items()},'food_count':foods.count(),'logged_days':logged_days,'window_days':days,'coverage_note':'Averages use logged days only. Unlogged days have unknown intake, and logged days may be incomplete.','sleep_hours_average':sleeps.aggregate(value=Avg('hours'))['value'],'sleep_samples':sleeps.count()}
+        steps=m.StepEntry.objects.filter(user=user,date__gte=start.date(),date__lte=date)
+        context['windows'][str(days)]={'nutrition_totals':totals,'nutrition_daily_average':{k:float(v or 0)/logged_days if logged_days else None for k,v in totals.items()},'food_count':foods.count(),'logged_days':logged_days,'window_days':days,'coverage_note':'Averages use logged days only. Unlogged days have unknown intake, and logged days may be incomplete.','sleep_hours_average':sleeps.aggregate(value=Avg('hours'))['value'],'sleep_samples':sleeps.count(),'steps_total':steps.aggregate(value=Sum('steps'))['value'],'step_samples':steps.count()}
     context['body_by_source']={}
     bodies=m.BodyMeasurement.objects.filter(user=user,recorded_at__gte=end-timedelta(days=30),recorded_at__lt=end).order_by('-recorded_at')[:120]
     for row in bodies:
@@ -49,7 +50,8 @@ def build_context(user,task,date=None,query=""):
     context['workouts']=[]
     for session in sessions:
         sets=list(m.WorkoutSet.objects.filter(session=session,completed=True).values('exercise__name','weight','reps','rir','rpe','set_type','failure')[:60])
-        context['workouts'].append({'name':session.name,'started_at':session.started_at,'sets':sets})
+        cardio=list(m.WorkoutCardio.objects.filter(session=session,completed=True).values('exercise__name','minutes')[:30])
+        context['workouts'].append({'name':session.name,'started_at':session.started_at,'sets':sets,'cardio':cardio})
     context['weekly_volume']=weekly_volume(user)
     context['cardio']=list(m.CardioEntry.objects.filter(user=user,recorded_at__gte=end-timedelta(days=7),recorded_at__lt=end).values('kind','minutes')[:30])
     # Limit even unusually large plans before serializing to an upstream provider.

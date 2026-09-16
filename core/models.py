@@ -122,6 +122,20 @@ class CardioEntry(Owned):
         ordering = ["-recorded_at"]
 
 
+class StepEntry(Owned):
+    date = models.DateField(default=timezone.localdate, db_index=True)
+    steps = models.PositiveIntegerField(
+        validators=[MaxValueValidator(200000)]
+    )
+    note = models.TextField(blank=True, max_length=2000)
+
+    class Meta:
+        ordering = ["-date"]
+        constraints = [
+            models.UniqueConstraint(fields=["user", "date"], name="steps_user_date")
+        ]
+
+
 class Equipment(Owned):
     name = models.CharField(max_length=100)
 
@@ -199,16 +213,23 @@ class MealTemplate(Owned):
 
 
 class Exercise(Owned):
+    activity_type = models.CharField(
+        max_length=20,
+        choices=[("strength", "Strength / weights"), ("cardio", "Cardio")],
+        default="strength",
+    )
     name = models.CharField(max_length=120)
     aliases = models.JSONField(default=list, blank=True)
-    primary_muscles = models.JSONField(default=list)
+    primary_muscles = models.JSONField(default=list, blank=True)
     secondary_muscles = models.JSONField(default=list, blank=True)
     equipment = models.CharField(max_length=150, blank=True)
     classification = models.CharField(
         max_length=20,
-        choices=[("compound", "Compound"), ("isolation", "Isolation")],
-        default="compound",
+        choices=[("", "Not set"), ("compound", "Compound"), ("isolation", "Isolation")],
+        default="",
+        blank=True,
     )
+    archived = models.BooleanField(default=False)
 
     class Meta:
         ordering = ["name"]
@@ -271,6 +292,22 @@ class WorkoutSet(Record):
     )
     failure = models.BooleanField(default=False)
     superset = models.CharField(max_length=30, blank=True)
+    notes = models.TextField(blank=True, max_length=2000)
+
+    class Meta:
+        ordering = ["order", "created_at"]
+
+
+class WorkoutCardio(Record):
+    session = models.ForeignKey(
+        WorkoutSession, on_delete=models.CASCADE, related_name="cardio"
+    )
+    exercise = models.ForeignKey(Exercise, on_delete=models.PROTECT)
+    order = models.PositiveIntegerField(default=1)
+    minutes = models.PositiveIntegerField(
+        default=20, validators=[MinValueValidator(1), MaxValueValidator(1440)]
+    )
+    completed = models.BooleanField(default=False)
     notes = models.TextField(blank=True, max_length=2000)
 
     class Meta:

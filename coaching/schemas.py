@@ -40,4 +40,9 @@ class DailySummary(Strict):
 class WorkoutAnalysis(DailySummary): pass
 class BodyTrendAnalysis(DailySummary): pass
 class ChatAnswer(DailySummary): pass
-SCHEMAS = dict(food=NutritionEstimate, daily=DailySummary, workout=WorkoutAnalysis,body=BodyTrendAnalysis,chat=ChatAnswer)
+class ExerciseMetadata(Strict):
+    aliases: list[Annotated[str, Field(min_length=1,max_length=79)]] = Field(default_factory=list,max_length=10)
+    primary_muscles: list[Annotated[str, Field(min_length=1,max_length=79)]] = Field(default_factory=list,max_length=10)
+    secondary_muscles: list[Annotated[str, Field(min_length=1,max_length=79)]] = Field(default_factory=list,max_length=10)
+    classification: Literal['compound','isolation']
+SCHEMAS = dict(food=NutritionEstimate, daily=DailySummary, workout=WorkoutAnalysis,body=BodyTrendAnalysis,chat=ChatAnswer,exercise=ExerciseMetadata)

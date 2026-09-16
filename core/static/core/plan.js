@@ -55,6 +55,16 @@ function addRow(data = {}, focus = false) {
     input.name = `exercise-${rowIndex}-${input.dataset.field}`;
     if (data[input.dataset.field] != null) input.value = data[input.dataset.field];
   });
+  const select = row.querySelector('[data-field="exercise"]');
+  const updateActivity = () => {
+    const cardio = select.selectedOptions[0]?.dataset.activity === 'cardio';
+    row.querySelector('.strength-fields').hidden = cardio;
+    row.querySelector('.cardio-fields').hidden = !cardio;
+    row.querySelectorAll('.strength-fields input').forEach(input => { input.disabled = cardio; });
+    row.querySelectorAll('.cardio-fields input').forEach(input => { input.disabled = !cardio; });
+  };
+  select.addEventListener('change', updateActivity);
+  updateActivity();
   row.querySelector('.remove-row').addEventListener('click', () => {
     row.remove();
     document.querySelector('#add-plan-row').focus();
@@ -69,7 +79,7 @@ editor.addEventListener('submit', event => {
   const names = Object.values(schedule);
   const exercises = [...rows.querySelectorAll('.plan-row')].map((row, i) => {
     const value = { order: i + 1 };
-    row.querySelectorAll('[data-field]').forEach(input => {
+    row.querySelectorAll('[data-field]:not(:disabled)').forEach(input => {
       value[input.dataset.field] = input.type === 'number'
         ? (input.value === '' ? null : Number(input.value)) : input.value.trim();
     });

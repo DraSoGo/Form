@@ -39,7 +39,7 @@ class ArchiveTests(TestCase):
         return m.WorkoutPlan(**values)
 
     def test_malformed_schema_and_records_rejected(self):
-        for version in (True, False, 1.0, '1', None, 2, [], {}):
+        for version in (True, False, 1.0, '1', None, 0, 3, [], {}):
             with self.subTest(version=version), self.assertRaises(ValidationError):
                 validate_archive({'schema_version': version, 'records': []}, self.user)
         for record in ({'model': [], 'pk': 'bad', 'fields': {}}, {'model': 'core.exercise', 'pk': None, 'fields': {}}):
@@ -195,8 +195,34 @@ class ArchiveTests(TestCase):
         m.FoodEntry.objects.create(user=self.user, name='Rice', image='private.jpg', image_status='stored')
         Job.objects.create(user=self.user, task='chat', dedupe='roundtrip')
         payload = export_archive(self.user)
+        self.assertEqual(payload['schema_version'], 2)
         self.assertNotIn('private.jpg', json.dumps(payload))
         self.user.delete()
         destination = get_user_model().objects.create_user('destination')
         self.assertEqual(import_archive(payload, destination), 3)
         self.assertEqual(m.FoodEntry.objects.get().image_status, 'not_in_archive')
+
+    def test_v1_exercise_import_supplies_new_safe_defaults(self):
+        exercise = self.exercise()
+        payload = self.payload(exercise)
+        fields = payload['records'][0]['fields']
+        fields.pop('activity_type')
+        fields.pop('archived')
+        self.assertEqual(import_archive(payload, self.user), 1)
+        exercise.refresh_from_db()
+        self.assertEqual(exercise.activity_type, 'strength')
+        self.assertFalse(exercise.archived)
+
+    def test_v2_steps_cardio_and_typed_exercise_round_trip(self):
+        exercise=m.Exercise.objects.create(user=self.user,name='Bike',activity_type='cardio')
+        step=m.StepEntry.objects.create(user=self.user,steps=9000)
+        session=m.WorkoutSession.objects.create(user=self.user,name='Cardio')
+        cardio=m.WorkoutCardio.objects.create(session=session,exercise=exercise,minutes=35)
+        payload=export_archive(self.user)
+        cardio.delete();session.delete();step.delete();exercise.delete()
+        self.user.delete()
+        destination=get_user_model().objects.create_user('v2-destination')
+        self.assertEqual(import_archive(payload,destination),4)
+        self.assertEqual(m.StepEntry.objects.get().steps,9000)
+        self.assertEqual(m.WorkoutCardio.objects.get().minutes,35)
+        self.assertEqual(m.Exercise.objects.get().activity_type,'cardio')

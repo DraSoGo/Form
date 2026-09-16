@@ -14,9 +14,11 @@ from django.test import Client, TestCase, override_settings
 from django.utils import timezone
 
 from .models import (
-    BodyMeasurement, Exercise, FoodEntry, FoodLibrary, LoginAttempt,
-    MealTemplate, NutritionTarget, Profile, WorkoutPlan, WorkoutSession, WorkoutSet,
+    BodyMeasurement, Equipment, Exercise, FoodEntry, FoodLibrary, LoginAttempt,
+    MealTemplate, NutritionTarget, Profile, StepEntry, WorkoutCardio, WorkoutPlan,
+    WorkoutSession, WorkoutSet,
 )
+from .forms import ExerciseForm, StepForm
 from .services import (
     active_plan, active_target, calculate_target, create_plan, create_target,
     delete_image, nutrition_totals, retain_images, save_image, start_session, weekly_volume,
@@ -48,9 +50,11 @@ class CoreFlowTests(TestCase):
         )
 
     def plan_data(self, **changes):
-        return dict(name='Training', schedule_type='rotation', schedule=['Push', 'Rest'],
+        data = dict(name='Training', schedule_type='rotation', schedule=['Push', 'Rest'],
                     exercises=[{'exercise': str(self.exercise.pk), 'day': 'Push', 'sets': 2,
-                                'rep_min': 6, 'rep_max': 10, 'rest': 120}], **changes)
+                                'rep_min': 6, 'rep_max': 10, 'rest': 120}])
+        data.update(changes)
+        return data
 
     def food_data(self, **changes):
         return dict({'recorded_at': timezone.localtime().strftime('%Y-%m-%dT%H:%M'),
@@ -145,6 +149,96 @@ class CoreFlowTests(TestCase):
         self.client.post(f'/workouts/set/{item.pk}/complete/')
         item.refresh_from_db()
         self.assertFalse(item.completed)
+
+    def test_typed_exercise_form_uses_owned_equipment_and_allows_blank_muscles(self):
+        Equipment.objects.create(user=self.user, name='Dumbbell')
+        other = get_user_model().objects.create_user('equipment-owner')
+        Equipment.objects.create(user=other, name='Treadmill')
+        form = ExerciseForm(data={'name': 'Walk', 'activity_type': 'cardio', 'aliases': '',
+            'primary_muscles': '', 'secondary_muscles': '', 'equipment': 'Dumbbell',
+            'classification': 'compound'}, user=self.user)
+        self.assertTrue(form.is_valid(), form.errors)
+        self.assertEqual(list(form.fields['equipment'].choices),
+                         [('', 'No equipment'), ('Dumbbell', 'Dumbbell')])
+        exercise = form.save(commit=False)
+        self.assertEqual((exercise.activity_type, exercise.primary_muscles), ('cardio', []))
+        self.assertFalse(exercise.archived)
+        self.assertFalse(ExerciseForm(data={**form.data, 'equipment': 'Treadmill'}, user=self.user).is_valid())
+
+    def test_steps_require_nonnegative_integer(self):
+        self.assertTrue(StepForm(data={'date': timezone.localdate(), 'steps': '12345', 'note': ''}).is_valid())
+        self.assertFalse(StepForm(data={'date': timezone.localdate(), 'steps': '-1', 'note': ''}).is_valid())
+
+    def test_cardio_plan_creates_duration_log_and_rejects_strength_fields(self):
+        cardio = Exercise.objects.create(user=self.user, name='Elliptical', activity_type='cardio')
+        data = self.plan_data(exercises=[{'exercise': str(cardio.pk), 'day': 'Push', 'minutes': 25}])
+        plan = create_plan(self.user, data)
+        session = start_session(self.user, plan, 'Push')
+        self.assertEqual(session.sets.count(), 0)
+        self.assertEqual((session.cardio.first().exercise, session.cardio.first().minutes), (cardio, 25))
+        for bad in (0, 1441, '25'):
+            with self.subTest(minutes=bad), self.assertRaises(ValidationError):
+                create_plan(self.user, self.plan_data(exercises=[{'exercise': str(cardio.pk), 'day': 'Push', 'minutes': bad}]))
+        with self.assertRaises(ValidationError):
+            create_plan(self.user, self.plan_data(exercises=[{'exercise': str(cardio.pk), 'day': 'Push', 'minutes': 25, 'sets': 3}]))
+
+    def test_historical_plan_shape_survives_later_exercise_type_edit(self):
+        plan=create_plan(self.user,self.plan_data())
+        self.exercise.activity_type='cardio';self.exercise.save()
+        session=start_session(self.user,plan,'Push')
+        self.assertEqual(session.sets.count(),2)
+        self.assertEqual(session.cardio.count(),0)
+
+    def test_archived_exercise_cannot_enter_new_plan_but_history_survives(self):
+        plan = create_plan(self.user, self.plan_data())
+        session = start_session(self.user, plan, 'Push')
+        self.assertEqual(self.client.post(f'/exercise/{self.exercise.pk}/archive/').status_code, 302)
+        self.exercise.refresh_from_db()
+        self.assertTrue(self.exercise.archived)
+        self.assertEqual(session.sets.count(), 2)
+        with self.assertRaises(ValidationError):
+            create_plan(self.user, self.plan_data())
+        self.assertNotContains(self.client.get('/workouts/plan/'), 'Bench press')
+
+    def test_steps_replace_body_cardio_and_legacy_cardio_moves_to_training(self):
+        from .models import CardioEntry, StepEntry
+        legacy = CardioEntry.objects.create(user=self.user, kind='Run', minutes=20)
+        step = StepEntry.objects.create(user=self.user, steps=8500)
+        body = self.client.get('/body/')
+        self.assertContains(body, '+ Steps')
+        self.assertContains(body, '8500')
+        self.assertNotContains(body, '+ Cardio')
+        training = self.client.get('/workouts/')
+        self.assertContains(training, 'Legacy cardio')
+        self.assertContains(training, 'Run')
+        self.assertEqual(self.client.post(f'/delete/step/{step.pk}/').status_code, 302)
+        self.assertFalse(StepEntry.objects.filter(pk=step.pk).exists())
+        self.assertTrue(CardioEntry.objects.filter(pk=legacy.pk).exists())
+
+    def test_owned_delete_is_post_only_and_food_delete_removes_photo(self):
+        name = save_image(self.image_upload())
+        entry = FoodEntry.objects.create(user=self.user, name='Meal', image=name)
+        self.assertEqual(self.client.get(f'/delete/food/{entry.pk}/').status_code, 405)
+        other = get_user_model().objects.create_user('delete-owner')
+        other_entry = FoodEntry.objects.create(user=other, name='Private')
+        self.assertEqual(self.client.post(f'/delete/food/{other_entry.pk}/').status_code, 404)
+        self.assertEqual(self.client.post(f'/delete/food/{entry.pk}/').status_code, 302)
+        self.assertFalse(FoodEntry.objects.filter(pk=entry.pk).exists())
+        self.assertFalse((Path(self.media.name) / name).exists())
+
+    def test_session_activity_delete_keeps_session(self):
+        cardio_exercise=Exercise.objects.create(user=self.user,name='Bike',activity_type='cardio')
+        session=WorkoutSession.objects.create(user=self.user,name='Mixed')
+        strength=WorkoutSet.objects.create(session=session,exercise=self.exercise)
+        cardio=WorkoutCardio.objects.create(session=session,exercise=cardio_exercise,minutes=20)
+        page=self.client.get(f'/workouts/session/{session.pk}/')
+        self.assertContains(page,f'/delete/set/{strength.pk}/')
+        self.assertContains(page,f'/delete/workout-cardio/{cardio.pk}/')
+        self.assertEqual(self.client.post(f'/delete/set/{strength.pk}/').status_code,302)
+        self.assertEqual(self.client.post(f'/delete/workout-cardio/{cardio.pk}/').status_code,302)
+        self.assertTrue(WorkoutSession.objects.filter(pk=session.pk).exists())
+        self.assertFalse(WorkoutSet.objects.filter(pk=strength.pk).exists())
+        self.assertFalse(WorkoutCardio.objects.filter(pk=cardio.pk).exists())
 
     def test_copy_last_preserves_actuals_and_resets_completion(self):
         plan = create_plan(self.user, self.plan_data())

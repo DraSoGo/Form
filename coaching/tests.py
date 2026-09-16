@@ -11,13 +11,13 @@ from django.core.exceptions import ValidationError
 from django.test import TestCase,SimpleTestCase,override_settings
 from django.utils import timezone
 from pydantic import ValidationError as SchemaError
-from core.models import Profile,FoodEntry,BodyMeasurement,SleepEntry,NutritionTarget
+from core.models import Profile,FoodEntry,BodyMeasurement,SleepEntry,NutritionTarget,Exercise
 from core.services import create_target,target_payload
 from .models import ProviderModel,TaskRoute,Job,Analysis,Suggestion,RequestAttempt
 from .providers import Provider,ProviderError,complete,request
 from .router import route
-from .schemas import NutritionEstimate
-from .services import enqueue,daily,schedule,claim_job,run_job,decide,on_body_saved,enqueue_food
+from .schemas import NutritionEstimate, ExerciseMetadata
+from .services import enqueue,daily,schedule,claim_job,run_job,decide,on_body_saved,enqueue_food,enqueue_exercise
 from .context import build_context
 from .triggers import evaluate
 from .push import validate_subscription
@@ -25,6 +25,7 @@ from .validation import validate_change
 
 SUMMARY={'summary':'Stable recent progress.','highlights':['Protein logged consistently.'],'suggestions':[]}
 FOOD={'foods':[{'name':'Rice','amount':'150–200 g'}],'calories':230,'protein':4,'carbs':50,'fat':1,'fiber':2,'sugar':None,'sodium':None,'calories_low':200,'calories_high':280,'confidence':'medium','uncertainty':'Portion is estimated from image.'}
+EXERCISE={'aliases':['DB bench press'],'primary_muscles':['Chest'],'secondary_muscles':['Triceps'],'classification':'compound'}
 @override_settings(STORAGES={'staticfiles':{'BACKEND':'django.contrib.staticfiles.storage.StaticFilesStorage'}},ALLOWED_HOSTS=['testserver'])
 class CoachingTests(TestCase):
     def setUp(self):
@@ -142,10 +143,44 @@ class CoachingTests(TestCase):
     def test_extreme_suggestion_rejected(self):
         s=self.suggestion();change={k:getattr(s,k) for k in ('kind','before','proposed')};change['proposed']['calories']=900
         with self.assertRaises(ValidationError): validate_change(self.user,change)
+    def test_workout_suggestion_accepts_cardio_duration(self):
+        exercise=Exercise.objects.create(user=self.user,name='Walk',activity_type='cardio')
+        plan={'name':'Mixed','schedule_type':'rotation','schedule':['Cardio'],
+              'exercises':[{'exercise':str(exercise.pk),'day':'Cardio','minutes':30}]}
+        validate_change(self.user,{'kind':'workout','before':plan,'proposed':plan})
+        invalid={**plan,'exercises':[{**plan['exercises'][0],'minutes':0}]}
+        with self.assertRaises(ValidationError):
+            validate_change(self.user,{'kind':'workout','before':plan,'proposed':invalid})
+
+    @patch('coaching.services.route')
+    def test_exercise_metadata_fills_blanks_only(self, mock):
+        mock.return_value=(EXERCISE,'gpt','test')
+        exercise=Exercise.objects.create(user=self.user,name='Dumbbell press',secondary_muscles=['Front delts'])
+        job=enqueue_exercise(self.user,exercise)
+        run_job(claim_job());exercise.refresh_from_db();job.refresh_from_db()
+        self.assertEqual(exercise.aliases,['DB bench press'])
+        self.assertEqual(exercise.primary_muscles,['Chest'])
+        self.assertEqual(exercise.secondary_muscles,['Front delts'])
+        self.assertEqual(exercise.classification,'compound')
+        self.assertEqual(job.status,'done')
+
+    @patch('coaching.services.route')
+    def test_exercise_metadata_rejects_stale_edit(self, mock):
+        mock.return_value=(EXERCISE,'gpt','test')
+        exercise=Exercise.objects.create(user=self.user,name='Press')
+        job=enqueue_exercise(self.user,exercise)
+        exercise.primary_muscles=['Shoulders'];exercise.save()
+        run_job(claim_job());job.refresh_from_db();exercise.refresh_from_db()
+        self.assertEqual(job.error,'exercise_changed_review_required')
+        self.assertEqual(exercise.aliases,[])
+        self.assertEqual(exercise.primary_muscles,['Shoulders'])
 
 class AdapterTests(SimpleTestCase):
     def test_nutrition_range_validation(self):
         with self.assertRaises(SchemaError): NutritionEstimate.model_validate({**FOOD,'calories_low':500})
+    def test_exercise_metadata_schema_is_bounded(self):
+        self.assertEqual(ExerciseMetadata.model_validate(EXERCISE).classification,'compound')
+        with self.assertRaises(SchemaError): ExerciseMetadata.model_validate({**EXERCISE,'classification':'unknown'})
     @patch('coaching.providers.request')
     def test_each_protocol_image_payload_and_extraction(self,mock):
         samples={'messages':{'content':[{'type':'text','text':'ok'}]},'responses':{'output':[{'content':[{'type':'output_text','text':'ok'}]}]},'chat':{'choices':[{'message':{'content':'ok'}}]}}
@@ -204,6 +239,15 @@ class ContextRegressionTests(TestCase):
         window=build_context(self.user,'chat')['windows']['7']
         self.assertEqual(window['logged_days'],1)
         self.assertEqual(window['nutrition_daily_average']['calories'],2100)
+    def test_context_includes_steps_and_completed_training_cardio(self):
+        from core.models import StepEntry,Exercise,WorkoutSession,WorkoutCardio
+        StepEntry.objects.create(user=self.user,steps=7600)
+        exercise=Exercise.objects.create(user=self.user,name='Bike',activity_type='cardio')
+        session=WorkoutSession.objects.create(user=self.user,name='Cardio')
+        WorkoutCardio.objects.create(session=session,exercise=exercise,minutes=30,completed=True)
+        context=build_context(self.user,'body')
+        self.assertEqual(context['windows']['1']['steps_total'],7600)
+        self.assertEqual(context['workouts'][0]['cardio'][0]['minutes'],30)
     @patch('coaching.services.route')
     def test_invalid_suggestion_rolls_back_whole_analysis(self,mock):
         suggestion=self.suggestion();change={k:getattr(suggestion,k) for k in ('kind','expected_version','before','proposed','reason','evidence')};suggestion.delete()

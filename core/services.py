@@ -93,13 +93,31 @@ def create_plan(user, data, reason="", expected_version=None):
             exercise = Exercise.objects.get(id=item.get("exercise"), user=user)
         except (Exercise.DoesNotExist, ValueError, ValidationError):
             raise ValidationError("Unknown exercise reference")
-        for key, low, high in [
+        if exercise.archived:
+            raise ValidationError("Archived exercises cannot be added to a new plan")
+        common = {"exercise", "day", "order", "notes"}
+        if not isinstance(item.get("day", ""), str) or not 1 <= len(item.get("day", "")) <= 80:
+            raise ValidationError("Invalid workout day")
+        if not isinstance(item.get("notes", ""), str) or len(item.get("notes", "")) > 2000:
+            raise ValidationError("Invalid exercise notes")
+        if exercise.activity_type == "cardio":
+            if set(item) - (common | {"minutes"}):
+                raise ValidationError("Cardio plans use duration only")
+            minutes = item.get("minutes")
+            if type(minutes) is not int or not 1 <= minutes <= 1440:
+                raise ValidationError("Invalid cardio duration")
+            ranges = [("order", 0, 100)]
+        else:
+            if set(item) - (common | {"sets", "rep_min", "rep_max", "rest", "rir", "rpe"}):
+                raise ValidationError("Invalid strength prescription")
+            ranges = [
             ("sets", 1, 30),
             ("rep_min", 1, 100),
             ("rep_max", 1, 100),
             ("rest", 0, 3600),
             ("order", 0, 100),
-        ]:
+            ]
+        for key, low, high in ranges:
             value = item.get(
                 key,
                 {"sets": 3, "rep_min": 8, "rep_max": 12, "rest": 90, "order": 1}[key],
@@ -110,9 +128,9 @@ def create_plan(user, data, reason="", expected_version=None):
                 or not low <= value <= high
             ):
                 raise ValidationError("Invalid " + key)
-        if item.get("rep_min", 8) > item.get("rep_max", 12):
+        if exercise.activity_type == "strength" and item.get("rep_min", 8) > item.get("rep_max", 12):
             raise ValidationError("Rep minimum exceeds maximum")
-        for key in ["rir", "rpe"]:
+        for key in (["rir", "rpe"] if exercise.activity_type == "strength" else []):
             if item.get(key) is not None and (
                 not isinstance(item[key], (float, int)) or not 0 <= item[key] <= 10
             ):
@@ -265,9 +283,26 @@ def start_session(user, plan=None, name="Workout", copy_last=False):
             item.session = session
             item.completed = False
             item.save(force_insert=True)
+        for item in last.cardio.all():
+            item.pk = uuid.uuid4()
+            item.session = session
+            item.completed = False
+            item.save(force_insert=True)
     elif plan:
         for item in plan.exercises:
             if item.get("day", name) != name:
+                continue
+            exercise = Exercise.objects.get(pk=item["exercise"], user=user)
+            # The versioned prescription shape owns historical behavior even if
+            # the library entry is edited later.
+            if "minutes" in item:
+                WorkoutCardio.objects.create(
+                    session=session,
+                    exercise=exercise,
+                    order=item.get("order", 1) * 100,
+                    minutes=item["minutes"],
+                    notes=item.get("notes", ""),
+                )
                 continue
             for i in range(item.get("sets", 3)):
                 WorkoutSet.objects.create(

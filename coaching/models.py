@@ -2,7 +2,7 @@ import uuid
 from django.conf import settings
 from django.db import models
 
-TASKS = [('food','Food Vision'),('workout','Workout Analysis'),('body','Body / Progress Analysis'),('daily','Daily Summary'),('chat','Coach Chat')]
+TASKS = [('food','Food Vision'),('workout','Workout Analysis'),('body','Body / Progress Analysis'),('daily','Daily Summary'),('chat','Coach Chat'),('exercise','Exercise Metadata')]
 class Record(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     created_at = models.DateTimeField(auto_now_add=True)
