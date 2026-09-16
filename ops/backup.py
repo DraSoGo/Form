@@ -65,7 +65,9 @@ def database_state(database=None):
     migrations = json.loads(sql("SELECT coalesce(json_agg(row_to_json(m) ORDER BY app,name), '[]'::json) FROM (SELECT app,name,applied FROM django_migrations) m;", database))
     if not migrations:
         raise RuntimeError('Application migrations empty')
-    columns = json.loads(sql("SELECT coalesce(json_agg(row_to_json(c) ORDER BY table_name,ordinal_position), '[]'::json) FROM (SELECT table_name,column_name,ordinal_position,data_type,udt_name,is_nullable,column_default FROM information_schema.columns WHERE table_schema='public') c;", database))
+    # pg_restore can compact dropped-column gaps, changing ordinal_position while
+    # preserving every live column. Compare semantic column definitions only.
+    columns = json.loads(sql("SELECT coalesce(json_agg(row_to_json(c) ORDER BY table_name,column_name), '[]'::json) FROM (SELECT table_name,column_name,data_type,udt_name,is_nullable,column_default FROM information_schema.columns WHERE table_schema='public') c;", database))
     constraints = json.loads(sql("SELECT coalesce(json_agg(row_to_json(c) ORDER BY table_name,name), '[]'::json) FROM (SELECT r.relname AS table_name, con.conname AS name, pg_get_constraintdef(con.oid) AS definition FROM pg_constraint con JOIN pg_class r ON r.oid=con.conrelid JOIN pg_namespace n ON n.oid=r.relnamespace WHERE n.nspname='public') c;", database))
     return {'table_counts': counts, 'migrations': migrations, 'columns': columns, 'constraints': constraints}
 

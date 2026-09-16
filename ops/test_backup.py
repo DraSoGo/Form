@@ -13,6 +13,23 @@ spec.loader.exec_module(backup)
 
 
 class BackupTests(unittest.TestCase):
+    def test_database_state_compares_column_semantics_not_physical_positions(self):
+        responses = [
+            'auth_user\ncore_profile\ndjango_migrations',
+            '1',
+            '1',
+            '19',
+            '[{"app":"core","name":"0001","applied":"2026-09-16T00:00:00Z"}]',
+            '[{"table_name":"auth_user","column_name":"id","data_type":"integer","udt_name":"int4","is_nullable":"NO","column_default":null}]',
+            '[]',
+        ]
+        with patch.object(backup, 'sql', side_effect=responses) as sql:
+            state = backup.database_state()
+        columns_query = sql.call_args_list[-2].args[0]
+        self.assertIn('ORDER BY table_name,column_name', columns_query)
+        self.assertNotIn('ordinal_position', columns_query)
+        self.assertNotIn('ordinal_position', state['columns'][0])
+
     def test_deployed_revision_uses_release_marker_without_git_checkout(self):
         with tempfile.TemporaryDirectory() as directory, patch.object(backup, 'APP', Path(directory)):
             (Path(directory) / '.revision').write_text('481a263deadbeef\n')
