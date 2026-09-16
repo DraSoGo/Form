@@ -13,6 +13,13 @@ spec.loader.exec_module(backup)
 
 
 class BackupTests(unittest.TestCase):
+    def test_deployed_revision_uses_release_marker_without_git_checkout(self):
+        with tempfile.TemporaryDirectory() as directory, patch.object(backup, 'APP', Path(directory)):
+            (Path(directory) / '.revision').write_text('481a263deadbeef\n')
+            with patch.object(backup, 'run') as run:
+                self.assertEqual(backup.deployed_revision(), '481a263deadbeef')
+                run.assert_not_called()
+
     def test_backup_seals_expected_database_before_resuming(self):
         with tempfile.TemporaryDirectory() as directory:
             app = Path(directory) / 'app'
@@ -28,7 +35,7 @@ class BackupTests(unittest.TestCase):
             calls = []
             def run(command, **kwargs):
                 calls.append(command)
-                return SimpleNamespace(stdout=b'web\nworker\n' if 'ps' in command else b'commit123')
+                return SimpleNamespace(stdout=b'web\nworker\n' if 'ps' in command else b'deadbeef')
             def get_state():
                 self.assertFalse(any('start' in command for command in calls))
                 return state

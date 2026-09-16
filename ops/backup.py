@@ -21,10 +21,25 @@ MEDIA = APP / 'data/media'
 STATE = APP / 'data/backup-status.json'
 SNAPSHOT = re.compile(r'^\d{8}T\d{6}Z-[a-f0-9]{8}$')
 DIGEST = re.compile(r'^[a-f0-9]{64}$')
+REVISION = re.compile(r'^[a-f0-9]{7,64}$')
 
 
 def run(args, **kwargs):
     return subprocess.run(args, check=True, **kwargs)
+
+
+def deployed_revision():
+    marker = APP / '.revision'
+    if marker.is_file():
+        value = marker.read_text().strip()
+        if not REVISION.fullmatch(value):
+            raise RuntimeError('Invalid deployment revision marker')
+        return value
+    result = run(['git', '-C', str(APP), 'rev-parse', 'HEAD'], stdout=subprocess.PIPE)
+    value = result.stdout.decode().strip()
+    if not REVISION.fullmatch(value):
+        raise RuntimeError('Invalid Git revision')
+    return value
 
 
 def db(args, **kwargs):
@@ -184,7 +199,7 @@ def backup():
     finally:
         if stopped:
             run(compose + ['start', *stopped])
-    revision = run(['git', '-C', str(APP), 'rev-parse', 'HEAD'], stdout=subprocess.PIPE).stdout.decode().strip()
+    revision = deployed_revision()
     config = {'revision': revision, 'files': {name: (APP / name).read_text() for name in ['compose.yaml', '.env.example', 'Dockerfile', 'requirements.txt', 'requirements.lock']}}
     atomic_json(path / 'config.json', config)
     atomic_json(path / 'checksums.json', {name: digest(path / name) for name in ['database.dump', 'manifest.json', 'config.json']})
