@@ -208,13 +208,14 @@ class ArchiveTests(TestCase):
         fields = payload['records'][0]['fields']
         fields.pop('activity_type')
         fields.pop('archived')
+        fields.pop('default_minutes')
         self.assertEqual(import_archive(payload, self.user), 1)
         exercise.refresh_from_db()
         self.assertEqual(exercise.activity_type, 'strength')
         self.assertFalse(exercise.archived)
 
     def test_v2_steps_cardio_and_typed_exercise_round_trip(self):
-        exercise=m.Exercise.objects.create(user=self.user,name='Bike',activity_type='cardio')
+        exercise=m.Exercise.objects.create(user=self.user,name='Bike',activity_type='cardio',default_minutes=35)
         step=m.StepEntry.objects.create(user=self.user,steps=9000)
         session=m.WorkoutSession.objects.create(user=self.user,name='Cardio')
         cardio=m.WorkoutCardio.objects.create(session=session,exercise=exercise,minutes=35)
@@ -226,3 +227,4 @@ class ArchiveTests(TestCase):
         self.assertEqual(m.StepEntry.objects.get().steps,9000)
         self.assertEqual(m.WorkoutCardio.objects.get().minutes,35)
         self.assertEqual(m.Exercise.objects.get().activity_type,'cardio')
+        self.assertEqual(m.Exercise.objects.get().default_minutes,35)

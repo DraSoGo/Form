@@ -154,16 +154,40 @@ class CoreFlowTests(TestCase):
         Equipment.objects.create(user=self.user, name='Dumbbell')
         other = get_user_model().objects.create_user('equipment-owner')
         Equipment.objects.create(user=other, name='Treadmill')
-        form = ExerciseForm(data={'name': 'Walk', 'activity_type': 'cardio', 'aliases': '',
+        form = ExerciseForm(data={'name': 'Walk', 'activity_type': 'cardio', 'default_minutes': '30', 'aliases': '',
             'primary_muscles': '', 'secondary_muscles': '', 'equipment': 'Dumbbell',
             'classification': 'compound'}, user=self.user)
         self.assertTrue(form.is_valid(), form.errors)
         self.assertEqual(list(form.fields['equipment'].choices),
                          [('', 'No equipment'), ('Dumbbell', 'Dumbbell')])
         exercise = form.save(commit=False)
-        self.assertEqual((exercise.activity_type, exercise.primary_muscles), ('cardio', []))
+        self.assertEqual((exercise.activity_type, exercise.default_minutes, exercise.primary_muscles),
+                         ('cardio', 30, []))
         self.assertFalse(exercise.archived)
         self.assertFalse(ExerciseForm(data={**form.data, 'equipment': 'Treadmill'}, user=self.user).is_valid())
+
+    def test_cardio_exercise_form_requires_duration_and_library_separates_metadata(self):
+        data = {'name': 'Walk', 'activity_type': 'cardio', 'aliases': '',
+                'primary_muscles': '', 'secondary_muscles': '', 'equipment': '',
+                'classification': ''}
+        self.assertFalse(ExerciseForm(data=data, user=self.user).is_valid())
+        form_page = self.client.get('/add/exercise/')
+        self.assertContains(form_page, 'Duration (minutes)')
+        self.assertContains(form_page, 'data-exercise-form')
+        cardio = Exercise.objects.create(user=self.user, name='Walk', activity_type='cardio',
+                                          default_minutes=30)
+        library = self.client.get('/workouts/')
+        self.assertContains(library, '<span class="exercise-name">Walk</span>', html=True)
+        self.assertContains(library, '<small class="exercise-meta">Cardio · 30 min · No equipment</small>', html=True)
+        self.assertContains(self.client.get('/workouts/plan/'), 'data-default-minutes="30"')
+
+    def test_strength_exercise_does_not_keep_cardio_duration(self):
+        form = ExerciseForm(data={'name': 'Squat', 'activity_type': 'strength',
+            'default_minutes': '45', 'aliases': '', 'primary_muscles': 'Quads',
+            'secondary_muscles': '', 'equipment': '', 'classification': 'compound'},
+            user=self.user)
+        self.assertTrue(form.is_valid(), form.errors)
+        self.assertIsNone(form.save(commit=False).default_minutes)
 
     def test_steps_require_nonnegative_integer(self):
         self.assertTrue(StepForm(data={'date': timezone.localdate(), 'steps': '12345', 'note': ''}).is_valid())

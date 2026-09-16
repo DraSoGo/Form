@@ -219,6 +219,12 @@ class Exercise(Owned):
         default="strength",
     )
     name = models.CharField(max_length=120)
+    default_minutes = models.PositiveIntegerField(
+        null=True,
+        blank=True,
+        verbose_name="Duration (minutes)",
+        validators=[MinValueValidator(1), MaxValueValidator(1440)],
+    )
     aliases = models.JSONField(default=list, blank=True)
     primary_muscles = models.JSONField(default=list, blank=True)
     secondary_muscles = models.JSONField(default=list, blank=True)

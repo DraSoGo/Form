@@ -224,9 +224,11 @@ def validate_archive(payload, user, *, keep_profile=False):
             raise ValidationError('Duplicate record ID. Import never overwrites existing data.')
         keys.add(key)
         fields = {**record['fields']}
-        if version == 1 and model is models.Exercise:
-            fields.setdefault('activity_type', 'strength')
-            fields.setdefault('archived', False)
+        if model is models.Exercise:
+            fields.setdefault('default_minutes', None)
+            if version == 1:
+                fields.setdefault('activity_type', 'strength')
+                fields.setdefault('archived', False)
         expected = {f.name for f in model._meta.fields} - {'id', 'user'}
         if set(fields) != expected:
             raise ValidationError('Missing or unknown fields for ' + record['model'])

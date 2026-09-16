@@ -77,6 +77,15 @@ class ExerciseForm(StyledModelForm):
             choices.append((current, current + ' (not in Settings)'))
         self.fields['equipment'] = forms.ChoiceField(choices=choices, required=False)
 
+    def clean(self):
+        data = super().clean()
+        if data.get('activity_type') == 'cardio':
+            if data.get('default_minutes') is None:
+                self.add_error('default_minutes', 'Enter the cardio duration in minutes.')
+        else:
+            data['default_minutes'] = None
+        return data
+
     class Meta:
         model = Exercise
         exclude = ['id', 'created_at', 'user', 'archived']

@@ -157,9 +157,10 @@ def generic_edit(request, kind, pk=None):
                 if kind == "library"
                 else "/body/"
             )
+    template = "core/exercise_form.html" if kind == "exercise" else "core/form.html"
     return render(
         request,
-        "core/form.html",
+        template,
         {"form": form, "title": ("Edit " if pk else "Add ") + title,
          "delete_kind": kind if pk and kind not in ("equipment", "exercise") else None,
          "object": instance},

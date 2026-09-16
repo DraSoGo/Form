@@ -56,14 +56,18 @@ function addRow(data = {}, focus = false) {
     if (data[input.dataset.field] != null) input.value = data[input.dataset.field];
   });
   const select = row.querySelector('[data-field="exercise"]');
-  const updateActivity = () => {
+  const updateActivity = (resetDuration = false) => {
     const cardio = select.selectedOptions[0]?.dataset.activity === 'cardio';
     row.querySelector('.strength-fields').hidden = cardio;
     row.querySelector('.cardio-fields').hidden = !cardio;
     row.querySelectorAll('.strength-fields input').forEach(input => { input.disabled = cardio; });
     row.querySelectorAll('.cardio-fields input').forEach(input => { input.disabled = !cardio; });
+    const minutes = row.querySelector('[data-field="minutes"]');
+    if (cardio && (resetDuration || data.minutes == null)) {
+      minutes.value = select.selectedOptions[0]?.dataset.defaultMinutes || '20';
+    }
   };
-  select.addEventListener('change', updateActivity);
+  select.addEventListener('change', () => updateActivity(true));
   updateActivity();
   row.querySelector('.remove-row').addEventListener('click', () => {
     row.remove();
