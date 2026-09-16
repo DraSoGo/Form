@@ -1,0 +1,31 @@
+from django.urls import path
+from . import views
+
+app_name = "core"
+urlpatterns = [
+    path("", views.dashboard, name="dashboard"),
+    path("body/", views.body, name="body"),
+    path("nutrition/", views.nutrition, name="nutrition"),
+    path("nutrition/new/", views.food_edit),
+    path("nutrition/<uuid:pk>/", views.food_edit),
+    path("library/<uuid:pk>/use/", views.library_use),
+    path("templates/save/", views.template_save),
+    path("templates/<uuid:pk>/use/", views.template_use),
+    path("photos/<uuid:pk>/", views.photo),
+    path("photos/<uuid:pk>/delete/", views.photo_delete),
+    path("targets/", views.targets),
+    path("workouts/", views.workouts, name="workouts"),
+    path("workouts/plan/", views.plan_edit),
+    path("workouts/start/", views.session_start),
+    path("workouts/session/<uuid:pk>/", views.session_detail),
+    path("workouts/set/<uuid:pk>/", views.set_edit),
+    path("workouts/set/<uuid:pk>/complete/", views.set_complete),
+    path("trends/", views.trends, name="trends"),
+    path("settings/", views.settings_view, name="settings"),
+    path("password/", views.password_change),
+    path("equipment/<uuid:pk>/delete/", views.equipment_delete),
+    path("add/<str:kind>/", views.generic_edit),
+    path("edit/<str:kind>/<uuid:pk>/", views.generic_edit),
+    path("export/<str:domain>/", views.export_view),
+    path("import/", views.import_view),
+]

@@ -1,0 +1,9 @@
+Django~=5.2.0
+psycopg[binary]>=3.2,<4
+gunicorn>=23,<24
+Pillow>=11,<13
+pydantic>=2.10,<3
+httpx>=0.28,<1
+pywebpush>=2,<3
+argon2-cffi>=23
+whitenoise>=6.8,<7
