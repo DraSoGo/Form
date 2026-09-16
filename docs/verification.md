@@ -1,6 +1,6 @@
 # Verification record
 
-Verified on 2026-09-16 against commit `014a74861ead429158d95bee3d34511ae6072ce1`.
+Verified on 2026-09-16 against commit `2851b3852bb74b40eaff8b6ace01e871c023e779`.
 
 Status meanings:
 
@@ -16,7 +16,7 @@ Status meanings:
 | 5. Nutrition target works. | Pass | Versioning, validation, stale-write protection, and rendering tests pass. |
 | 6. Manual food entry works. | Pass | Flow test verifies entry, totals, and reuse. |
 | 7. Food photo upload works. | Pass | Upload test verifies MIME checks, size handling, decoding, and safe re-encoding. |
-| 8. AI food analysis works or clearly reports provider capability failure. | Conditional | Protocol and vision-capability tests pass. Production clearly reports no configured capable provider because exposed keys were not installed. |
+| 8. AI food analysis works or clearly reports provider capability failure. | Pass | Live MaxPlus vision calls analyzed both pending production photos with `gpt-5.6-sol`; both entries now contain estimated nutrients and uncertainty. |
 | 9. User correction works. | Pass | Correction test verifies totals change without creating a duplicate entry. |
 | 10. Saved food works. | Pass | Food library and meal-template snapshot tests pass. |
 | 11. Workout plan works. | Pass | Plan validation, versioning, stale-write protection, and populated-page rendering pass. |
@@ -29,12 +29,12 @@ Status meanings:
 | 18. Weekly volume calculations work. | Pass | Test verifies completed work plus indirect-muscle volume rules. |
 | 19. Cardio log works. | Pass | Populated core-page flow and archive round-trip tests pass. |
 | 20. Sleep log works. | Pass | Populated core-page flow and bounded coaching-context tests pass. |
-| 21. Coach Chat works. | Conditional | Authentication, schema, suggestion-only persistence, and failure tests pass. Live production response needs a fresh AI key. |
+| 21. Coach Chat works. | Pass | Authentication, schema, suggestion-only persistence, and failure tests pass; a live structured MaxPlus chat response also passed validation. |
 | 22. Suggested Change works. | Pass | Validation and persistence tests pass. |
 | 23. Accept creates a new version. | Pass | Acceptance test verifies a new immutable version. |
 | 24. Reject preserves current version. | Pass | Rejection test verifies no version change. |
-| 25. Daily Summary can run manually. | Conditional | Job creation, idempotency, context, and output persistence tests pass. Live production output needs a fresh AI key. |
-| 26. Scheduled summary works. | Conditional | Bangkok date/time scheduling and worker behavior pass tests; production worker is running. Live output needs a fresh AI key. |
+| 25. Daily Summary can run manually. | Pass | Job creation, idempotency, context, output persistence, and a live structured MaxPlus daily response passed. |
+| 26. Scheduled summary works. | Conditional | Bangkok date/time scheduling and worker behavior pass tests; the production worker and verified live model are running. The next wall-clock scheduled execution has not yet been observed. |
 | 27. Re-analyze creates another summary version. | Pass | Versioning test passes. |
 | 28. AI provider fallback works. | Pass | Bounded one-step failover and model-disable tests pass with mocked provider responses. |
 | 29. Retry after all providers fail works. | Pass | Retry test verifies no failed output is persisted and the job can run again. |
@@ -52,7 +52,7 @@ Status meanings:
 
 ## Automated suites
 
-- Django: 68 tests passed on SQLite and isolated PostgreSQL.
+- Django: 70 tests passed on SQLite; the prior 68-test suite also passed on isolated PostgreSQL before the two HTML spacing regressions were added.
 - Operations: 12 tests passed.
 - Production deployment check passed. Django reports only the intentional shared-domain HSTS subdomain/preload warnings.
 
@@ -65,4 +65,4 @@ Status meanings:
 
 ## Secret handling
 
-API keys included in the original request were treated as exposed and were not installed. Runtime application/database secrets, VAPID keys, and initial account credentials were generated on the server in mode-0600 files under a mode-0700 directory. No secret values are stored in this repository.
+The owner explicitly authorized installing the original MaxPlus keys on 2026-09-16. They are stored only in the server's mode-0600 runtime environment file and are not present in this repository. Runtime application/database secrets, VAPID keys, and initial account credentials remain in mode-0600 files under a mode-0700 directory.

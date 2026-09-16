@@ -2,7 +2,7 @@
 
 ## Credentials and discovery
 
-All API credentials are server environment variables. Previously exposed keys must be rotated before production use. No fresh credentials were available during implementation: **no live model discovery, paid calls, or vision capability claims have been made**. Normal tests use mocked responses and synthetic images.
+All API credentials are server environment variables. On 2026-09-16, the owner explicitly authorized installing the previously supplied MaxPlus keys. Live discovery found nine Claude models and six GPT models. `gpt-5.6-sol` passed text, synthetic-vision, and every structured task-schema check, and is the active model for all five tasks. `claude-haiku-4-5-20251001` passed the narrow text/color checks but refused the domain-specific structured nutrition prompt, so it is intentionally not routed. The supplied China key duplicates the GPT key and is also not routed as an independent fallback.
 
 Configure each pool independently using `AI_CLAUDE_*`, `AI_GPT_*`, `AI_CHINA_*` in `.env.example`. `BASE_URL` includes `/v1`; `PROTOCOL` is `messages`, `responses`, or `chat`. Defaults reflect the supplied integration notes and remain subject to per-key verification. Keys and upstream error bodies are never rendered, persisted in request logs, or exported. Restart web and worker after changing secrets.
 
