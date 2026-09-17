@@ -1,8 +1,6 @@
 <p align="center">
-  <img src="core/static/core/icon-192.png" width="112" alt="Form logo">
+  <img src="docs/media/form_github.jpeg" width="500" alt="Form logo">
 </p>
-
-<h1 align="center">Form</h1>
 
 <p align="center">A private fitness, nutrition, and AI coaching app built for one person.</p>
 
@@ -30,7 +28,9 @@ The dashboard shows today's nutrition progress, the next scheduled session, rece
 - Latest weight and sleep values
 - Recent meals and end-of-day analysis
 
-> **GIF placeholder:** `docs/media/01-dashboard.gif`. Replace this note with the GIF after recording it.
+<p align="center">
+  <img src="docs/media/01-dashboard.gif" width="800" height="648" alt="Today dashboard">
+</p>
 
 ### 2. Food diary and photo analysis
 
@@ -42,7 +42,9 @@ Log a meal manually or choose a photograph from the camera, photo library, or de
 - Saved foods and reusable meal templates
 - Daily totals and nutrition targets
 
-> **GIF placeholder:** `docs/media/02-food-diary.gif`. Replace this note with the GIF after recording it.
+<p align="center">
+  <img src="docs/media/02-food-diary.gif" width="800" height="648" alt="Food diary and photo analysis">
+</p>
 
 ### 3. Training plans and exercise library
 
@@ -54,7 +56,9 @@ Build fixed-calendar or rotating workout plans from your own exercise library. E
 - Plan version history
 - Exercise archive and AI-assisted metadata
 
-> **GIF placeholder:** `docs/media/03-training-plan.gif`. Replace this note with the GIF after recording it.
+<p align="center">
+  <img src="docs/media/03-training-plan.gif" width="800" height="648" alt="Training plans and exercise library">
+</p>
 
 ### 4. Live workout session
 
@@ -66,7 +70,9 @@ Run a session from your phone, record actual performance, and keep the previous 
 - Copy values from the previous session
 - Complete, edit, or delete individual entries
 
-> **GIF placeholder:** `docs/media/04-workout-session.gif`. Replace this note with the GIF after recording it.
+<p align="center">
+  <img src="docs/media/04-workout-session.gif" width="800" height="648" alt="Live workout session">
+</p>
 
 ### 5. Body and recovery
 
@@ -78,7 +84,9 @@ Record body composition, sleep, and daily steps without overwriting historical m
 - Daily step count
 - Edit and delete controls for owned records
 
-> **GIF placeholder:** `docs/media/05-body-recovery.gif`. Replace this note with the GIF after recording it.
+<p align="center">
+  <img src="docs/media/05-body-recovery.gif" width="800" height="648" alt="Body and recovery">
+</p>
 
 ### 6. Trends
 
@@ -89,7 +97,9 @@ Review changes across 7, 14, or 30 days. Training tables show weekly volume and 
 - Best load and recent set performance
 - Same-source body measurement comparisons
 
-> **GIF placeholder:** `docs/media/06-trends.gif`. Replace this note with the GIF after recording it.
+<p align="center">
+  <img src="docs/media/06-trends.gif" width="800" height="648" alt="Trends">
+</p>
 
 ### 7. AI coach
 
@@ -101,7 +111,9 @@ Ask questions, analyze recent workouts or body trends, and generate a daily summ
 - Provider fallback and manual retry
 - Accept or reject versioned suggestions
 
-> **GIF placeholder:** `docs/media/07-ai-coach.gif`. Replace this note with the GIF after recording it.
+<p align="center">
+  <img src="docs/media/07-ai-coach.gif" width="800" height="648" alt="AI coach">
+</p>
 
 ### 8. Settings, equipment, and data tools
 
@@ -114,7 +126,9 @@ Settings holds the profile values used for target calculations and the equipment
 - Validated archive import
 - Photo retention and password controls
 
-> **GIF placeholder:** `docs/media/08-settings.gif`. Replace this note with the GIF after recording it.
+<p align="center">
+  <img src="docs/media/08-settings.gif" width="800" height="648" alt="Settings, equipment, and data tools">
+</p>
 
 ## Quick start
 
