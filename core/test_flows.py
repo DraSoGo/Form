@@ -352,6 +352,12 @@ class CoreFlowTests(TestCase):
         self.assertContains(response, 'accept="image/jpeg,image/png,image/webp"')
         self.assertNotContains(response, 'capture=')
 
+    def test_site_brand_uses_logo_for_header_and_browser_icon(self):
+        response = self.client.get('/')
+        self.assertContains(response, 'class="brand-logo"')
+        self.assertContains(response, 'rel="icon"')
+        self.assertContains(response, 'rel="apple-touch-icon"')
+
     def test_delete_photo_preserves_food_and_nutrients(self):
         name = save_image(self.image_upload())
         entry = FoodEntry.objects.create(user=self.user, name='Meal', calories=500, image=name, image_status='stored')

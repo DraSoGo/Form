@@ -1,6 +1,6 @@
 # NAS actions
 
-No new TrueNAS dataset or existing application dataset change is required. The existing mounted share `/mnt/nas-backup` (`//192.168.1.38/server-backup`) is sufficient. Fitness creates only its own `Fitness/` directory with `snapshots/` and content-addressed `blobs/` below it.
+No new TrueNAS dataset or existing application dataset change is required. Mount the chosen backup share at `/mnt/nas-backup` and set `BACKUP_CIFS_SOURCE=//<NAS_IP>/server-backup` when exact-source validation is required. Fitness creates only its own `Fitness/` directory with `snapshots/` and content-addressed `blobs/` below it.
 
 The backup operator needs read/write access within that directory. Existing CIFS ownership/mode settings and share ACLs govern effective access; hardlinks and Unix mode support are not required. Verify the share mount and free space before enabling the timer. Backup fails closed if the expected mount is absent. Do not create a plain local substitute for the mount.
 

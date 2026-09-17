@@ -2,9 +2,9 @@
 
 ## Layout and service boundary
 
-Production checkout: `/srv/docker/apps/fitness`. Compose project `fitness` contains web (Gunicorn), worker (`runworker`), and its own PostgreSQL 16. Database named volume `fitness_pgdata` stays local. Media bind: `/srv/docker/apps/fitness/data/media` to `/app/media`, owned by UID/GID 1000. Only web publishes `127.0.0.1:8095`; the internal database network has no published port. Outbound network allows configured AI/push HTTPS calls. Images run application code as UID 1000 with read-only root filesystems and a bounded temporary directory; logs and CPU/memory/process counts are limited.
+Production checkout: `/srv/docker/apps/fitness`. Compose project `fitness` contains web (Gunicorn), worker (`runworker`), and its own PostgreSQL 16. Database named volume `fitness_pgdata` stays local. Media bind: `/srv/docker/apps/fitness/data/media` to `/app/media`, owned by UID/GID 1000. The web service publishes host port `8095` for trusted-LAN access; restrict that port with the host firewall. The internal database network has no published port. Outbound network allows configured AI/push HTTPS calls. Images run application code as UID 1000, drop capabilities, disallow privilege escalation, and use a read-only root filesystem with a bounded temporary directory.
 
-Target HTTPS is `https://hp800-g5.tail985cfd.ts.net:8443`, through the existing Tailscale instance. Preserve existing Nextcloud `:443` and OJ routes. Take a timestamped copy of existing Tailscale Serve/Funnel JSON before changing only the new listener. The actual rollout/public reachability result belongs in final verification, not assumed here.
+Target HTTPS is `https://<PUBLIC_HOST>:8443`, through the existing Tailscale instance. Preserve existing Nextcloud `:443` and OJ routes. Take a timestamped copy of existing Tailscale Serve/Funnel JSON before changing only the new listener. The actual rollout/public reachability result belongs in final verification, not assumed here.
 
 ## First startup
 
@@ -25,7 +25,7 @@ curl --fail http://127.0.0.1:8095/health
 
 `createsuperuser` prompts securely for the account password; there is no password in source and no public registration. Use the application password-change page subsequently. If the app enforces single-user creation through a dedicated management command, use the command documented by core in the README. Account and provider secrets are required separately; manual tracking remains usable without AI keys.
 
-Secure cookies require HTTPS for browser login. The loopback health endpoint is suitable for host monitoring; do not disable secure cookies for production testing. Proxy forwards HTTPS scheme, and Django only trusts that header because the service is reachable through loopback on the host. No public database or unauthenticated media location exists.
+Secure cookies require HTTPS for browser login. The loopback health endpoint is suitable for host monitoring; do not disable secure cookies for production testing. A reverse proxy must forward the HTTPS scheme, and the host firewall must limit direct port `8095` access to trusted networks. No public database or unauthenticated media location exists.
 
 ## Update
 

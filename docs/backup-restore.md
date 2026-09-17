@@ -2,7 +2,7 @@
 
 ## Scope and consistency
 
-`ops/backup.py` owns only `/mnt/nas-backup/Fitness` and local `data/backup*` state. It verifies `/mnt/nas-backup` is a mounted CIFS share from `//192.168.1.38/server-backup` before writing to NAS. An unavailable/unexpected mount fails closed; no fallback writes fill the root disk. An advisory lock prevents overlapping backup, verification, pruning and restore tests.
+`ops/backup.py` owns only `/mnt/nas-backup/Fitness` and local `data/backup*` state. It verifies that `/mnt/nas-backup` is a CIFS mount before writing. Set `BACKUP_CIFS_SOURCE=//<NAS_IP>/server-backup` to require one exact source. An unavailable or unexpected mount fails closed, so the job cannot fill the root disk as a fallback. An advisory lock prevents overlapping backup, verification, pruning, and restore tests.
 
 Version-2 snapshots contain the expected schema/table counts and migration state plus a PostgreSQL custom-format dump, SHA-256 manifest of every media file, checksums, Git revision and sanitized deployment files. Secrets, actual runtime environment, sessions outside the database, and unrelated applications are never copied as configuration. The database dump contains private health records and server sessions: protect NAS access accordingly. Source code is recoverable from the recorded Git revision and repository, not copied into archives.
 

@@ -76,7 +76,7 @@
 
 ### Task 6: Production verification and deployment
 
-**Files:** `docs/verification.md`, deployment checkout on `192.168.1.48`
+**Files:** `docs/verification.md`, deployment checkout on `<SERVER_IP>`
 
 **Interfaces:** Production migration and routing for the verified GPT candidate.
 

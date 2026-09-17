@@ -1,6 +1,6 @@
 # Architecture and implementation contracts
 
-Fitness is a single-user Django 5.2 LTS project, Python 3.12, PostgreSQL 16, Gunicorn, Pillow, Pydantic, httpx, pywebpush. Server-rendered templates and static JS/CSS with no frontend secrets. Deployment: web + worker + isolated db. Local project is fitness/, production /srv/docker/apps/fitness. Bind web to 127.0.0.1:8095, planned HTTPS https://hp800-g5.tail985cfd.ts.net:8443. Preserve Nextcloud 443.
+Fitness is a single-user Django 5.2 LTS project using Python 3.12, PostgreSQL 16, Gunicorn, Pillow, Pydantic, httpx, and pywebpush. Server-rendered templates and static JS/CSS contain no frontend secrets. Deployment consists of web, worker, and isolated database services. The web service publishes port `8095` for a trusted LAN; an HTTPS proxy can expose `https://<PUBLIC_HOST>`. The database has no host port.
 
 Packages: config (settings/urls/wsgi), core (profile/body/nutrition/workout models, forms, service functions, auth and views), coaching (AI adapters/context/schema/router, suggestions, chat and durable jobs), core/templates and core/static (mobile UI and PWA). Migrations are committed. Sensitive photos require authenticated views. All mutations POST with CSRF. No public registration.
 

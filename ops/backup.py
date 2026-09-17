@@ -17,6 +17,7 @@ import uuid
 APP = Path('/srv/docker/apps/fitness')
 MOUNT = Path('/mnt/nas-backup')
 ROOT = MOUNT / 'Fitness'
+EXPECTED_CIFS_SOURCE = os.environ.get('BACKUP_CIFS_SOURCE', '')
 MEDIA = APP / 'data/media'
 STATE = APP / 'data/backup-status.json'
 SNAPSHOT = re.compile(r'^\d{8}T\d{6}Z-[a-f0-9]{8}$')
@@ -110,7 +111,10 @@ def mounted():
         raise RuntimeError('NAS mount absent; refusing all backup writes')
     result = run(['findmnt', '-n', '-o', 'FSTYPE,SOURCE', '--target', str(MOUNT)], stdout=subprocess.PIPE).stdout.decode()
     mounts = [tuple(line.split()) for line in result.splitlines() if line.split()]
-    if ('cifs', '//192.168.1.38/server-backup') not in mounts:
+    expected = ('cifs', EXPECTED_CIFS_SOURCE) if EXPECTED_CIFS_SOURCE else None
+    if expected and expected not in mounts:
+        raise RuntimeError('Unexpected NAS mount source/type')
+    if not expected and not any(filesystem == 'cifs' for filesystem, _ in mounts):
         raise RuntimeError('Unexpected NAS mount source/type')
     if ROOT.is_symlink():
         raise RuntimeError('Backup root must not be a symlink')
