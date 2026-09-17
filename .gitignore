@@ -7,7 +7,7 @@ __pycache__/
 *.pyc
 *.sqlite3
 .pytest_cache/
-media/
+/media/
 staticfiles/
 .superpowers/
 test-results/

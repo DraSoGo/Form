@@ -48,19 +48,19 @@ Status meanings:
 | 37. Restore test succeeds. | Pass | Real dump restored into an isolated PostgreSQL database; schema semantics, migrations, table counts, and media matched. Weekly timer is enabled. |
 | 38. `/health` works. | Pass | Production loopback health endpoint returned `{"status":"ok"}`. |
 | 39. Existing server applications still work. | Pass | Existing 21 containers remained running. OJ, Nextcloud, Immich, Paperless, Homepage, Kuma, and Beszel HTTP checks returned 200 after deployment. |
-| 40. Public HTTPS access works using the chosen safe mechanism. | Pass | Tailscale Funnel serves Fitness at `https://hp800-g5.tail985cfd.ts.net:8443`; secure-cookie, HSTS, CSP, no-store, and MIME-protection headers were verified. Existing port 443 route remains unchanged. |
+| 40. Public HTTPS access works using the chosen safe mechanism. | Pass | Tailscale Funnel serves Fitness at `https://<PUBLIC_HOST>:8443`; secure-cookie, HSTS, CSP, no-store, and MIME-protection headers were verified. Existing port 443 route remains unchanged. |
 
 ## Automated suites
 
-- Django: 70 tests passed on SQLite; the prior 68-test suite also passed on isolated PostgreSQL before the two HTML spacing regressions were added.
-- Operations: 12 tests passed.
+- Django: 89 tests passed on SQLite. Earlier release suites also passed against isolated PostgreSQL.
+- Operations: 13 tests passed.
 - Production deployment check passed. Django reports only the intentional shared-domain HSTS subdomain/preload warnings.
 
 ## Backup schedule
 
 - Daily backup: 03:30 server local time, with up to 15 minutes randomized delay.
 - Weekly isolated restore: Sunday 05:00 server local time, with up to 15 minutes randomized delay.
-- NAS target: `/mnt/nas-backup/Fitness` on `//192.168.1.38/server-backup`.
+- NAS target: `/mnt/nas-backup/Fitness` on `//<NAS_IP>/server-backup`.
 - Retention: 14 daily and 8 weekly restore points; media blobs are content-addressed and deduplicated.
 
 ## Secret handling

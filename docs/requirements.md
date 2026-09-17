@@ -39,7 +39,7 @@ SERVER
 
 SSH target:
 
-    drasogo@192.168.1.48
+    <SSH_USER>@<SERVER_IP>
 
 This Ubuntu server is already running multiple Docker applications.
 
@@ -71,7 +71,7 @@ Do not touch existing datasets or files belonging to other applications.
 
 I may also have previous Codex context in:
 
-    codex resume 01a04e7c-0f63-79e1-8414-6d288a38de1c
+    codex resume <CODEX_SESSION_ID>
 
 Use existing context if available, but verify the current server state instead
 of trusting stale assumptions.
