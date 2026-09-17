@@ -28,7 +28,7 @@ x-app: &app
 services:
   web:
     <<: *app
-    ports: ['8095:8000']
+    ports: ['127.0.0.1:8095:8000']
     mem_limit: 512m
     cpus: 0.75
     healthcheck:

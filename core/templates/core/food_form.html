@@ -15,8 +15,8 @@
   <h2>Start with a photo</h2>
   <p>A photo and an optional note are enough. Save it, then choose Analyze photo to estimate the meal.</p>
   <label for="food-photo-input">Food photo</label>
-  <input id="food-photo-input" type="file" name="photo" accept="image/jpeg,image/png,image/webp" capture="environment" aria-describedby="photo-help">
-  <p class="helptext" id="photo-help">JPEG, PNG or WebP, up to 10 MB. Nutrition estimates can be reviewed and corrected.</p>
+  <input id="food-photo-input" type="file" name="photo" accept="image/jpeg,image/png,image/webp" aria-describedby="photo-help">
+  <p class="helptext" id="photo-help">Choose from your camera, photo library or files. JPEG, PNG or WebP, up to 10 MB. Nutrition estimates can be reviewed and corrected.</p>
   {{ form.note.as_field_group }}
   {{ form.recorded_at.as_field_group }}
   <details {% if form.errors or entry and not entry.image %}open{% endif %}>
