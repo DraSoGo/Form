@@ -347,6 +347,11 @@ class CoreFlowTests(TestCase):
         self.assertTrue(entry.image)
         self.assertEqual(entry.calories, 0)
 
+    def test_food_photo_picker_does_not_force_mobile_camera(self):
+        response = self.client.get('/nutrition/new/')
+        self.assertContains(response, 'accept="image/jpeg,image/png,image/webp"')
+        self.assertNotContains(response, 'capture=')
+
     def test_delete_photo_preserves_food_and_nutrients(self):
         name = save_image(self.image_upload())
         entry = FoodEntry.objects.create(user=self.user, name='Meal', calories=500, image=name, image_status='stored')
