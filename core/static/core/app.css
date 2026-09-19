@@ -1757,13 +1757,22 @@ nav a[aria-current="page"]::after {
   align-items: stretch;
   gap: 0;
 }
+.food-row .food-select {
+  /* 44px tap target wrapping the checkbox — the whole area toggles. */
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 48px;
+  align-self: stretch;
+  cursor: pointer;
+  flex: 0 0 auto;
+}
 .food-row .food-checkbox {
   width: 22px;
   height: 22px;
-  margin: 17px 10px 17px 14px;
+  margin: 0;
   flex: 0 0 auto;
   accent-color: var(--primary);
-  align-self: flex-start;
 }
 .food-row .food-details {
   flex: 1 1 auto;
