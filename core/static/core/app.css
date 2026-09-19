@@ -1008,8 +1008,10 @@ nav a[aria-current="page"]::after {
    library's default uses yellow→orange→red; these selectors win by
    specificity and override the inline fill the library applies during its
    refreshPath() pass. */
+/* Fill is NOT overridden here: app.js sets inline fill per intensity
+   (blue→red scale) after every library render. A !important fill here
+   would flatten every muscle to the no-data gray. */
 .body-chart-muscle {
-  fill: #3a463d !important;
   stroke: var(--ink) !important;
   stroke-opacity: .30 !important;
   stroke-width: 0.1 !important;
