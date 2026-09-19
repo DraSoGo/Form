@@ -224,6 +224,49 @@ class CoreFlowTests(TestCase):
             create_plan(self.user, self.plan_data())
         self.assertNotContains(self.client.get('/workouts/plan/'), 'Bench press')
 
+    def test_plan_allows_duplicate_schedule_day_names(self):
+        from .services import create_plan
+        data = self.plan_data(schedule_type='fixed',
+                              schedule={'0': 'Push', '1': 'Push', '2': 'Push', '3': 'Push',
+                                        '4': 'Push', '5': 'Push', '6': 'Push'})
+        plan = create_plan(self.user, data)
+        self.assertEqual(plan.schedule['0'], 'Push')
+
+    def test_plan_rest_only_schedule_rejects_exercise_days(self):
+        from .services import create_plan
+        data = self.plan_data(schedule_type='fixed',
+                              schedule={'0': 'Rest', '1': 'Rest', '2': 'Rest', '3': 'Rest',
+                                        '4': 'Rest', '5': 'Rest', '6': 'Rest'})
+        with self.assertRaises(ValidationError):
+            create_plan(self.user, data)
+
+    def test_plan_rejects_day_not_in_schedule(self):
+        from .services import create_plan
+        data = self.plan_data(schedule=['Push', 'Rest'],
+                              exercises=[{'exercise': str(self.exercise.pk), 'day': 'Pull',
+                                          'sets': 3, 'rep_min': 8, 'rep_max': 12, 'rest': 90}])
+        with self.assertRaises(ValidationError):
+            create_plan(self.user, data)
+
+    def test_plan_valid_push_pull_legs_full_week(self):
+        from .services import create_plan
+        row = Exercise.objects.create(user=self.user, name='Row', primary_muscles=['Back'])
+        squat = Exercise.objects.create(user=self.user, name='Squat', primary_muscles=['Quads'])
+        data = self.plan_data(schedule_type='fixed',
+                              schedule={'0': 'Push', '1': 'Pull', '2': 'Legs', '3': 'Rest',
+                                        '4': 'Push', '5': 'Pull', '6': 'Legs'},
+                              exercises=[
+                                  {'exercise': str(self.exercise.pk), 'day': 'Push', 'sets': 3,
+                                   'rep_min': 8, 'rep_max': 12, 'rest': 90},
+                                  {'exercise': str(row.pk), 'day': 'Pull', 'sets': 4,
+                                   'rep_min': 8, 'rep_max': 12, 'rest': 120},
+                                  {'exercise': str(squat.pk), 'day': 'Legs', 'sets': 5,
+                                   'rep_min': 5, 'rep_max': 8, 'rest': 180},
+                              ])
+        plan = create_plan(self.user, data)
+        self.assertEqual(len(plan.exercises), 3)
+        self.assertEqual({e['day'] for e in plan.exercises}, {'Push', 'Pull', 'Legs'})
+
     def test_steps_replace_body_cardio_and_legacy_cardio_moves_to_training(self):
         from .models import CardioEntry, StepEntry
         legacy = CardioEntry.objects.create(user=self.user, kind='Run', minutes=20)
