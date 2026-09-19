@@ -1,6 +1,6 @@
 """Tests for core.muscles muscle-map logic."""
 
-from datetime import timedelta
+from datetime import datetime, time, timedelta
 
 from django.contrib.auth import get_user_model
 from django.test import TestCase
@@ -123,6 +123,76 @@ class MuscleTests(TestCase):
         WorkoutSet.objects.create(session=new_session, exercise=exercise, completed=True)
         volume = volume_by_muscle(self.user, days=7)
         self.assertEqual(volume["shoulders"]["sets"], 1)
+
+    def test_region_states_single_day_and_muscle_summary_on_date(self):
+        chest = Exercise.objects.create(
+            user=self.user, name="Bench", primary_muscles=["chest"]
+        )
+        back = Exercise.objects.create(
+            user=self.user, name="Row", primary_muscles=["back"]
+        )
+        today = timezone.localdate()
+        yesterday = today - timedelta(days=1)
+        chest_session = WorkoutSession.objects.create(
+            user=self.user,
+            name="Push",
+            started_at=timezone.make_aware(
+                datetime.combine(today, time.min)
+            ) + timedelta(hours=10),
+        )
+        back_session = WorkoutSession.objects.create(
+            user=self.user,
+            name="Pull",
+            started_at=timezone.make_aware(
+                datetime.combine(yesterday, time.min)
+            ) + timedelta(hours=10),
+        )
+        WorkoutSet.objects.create(session=chest_session, exercise=chest, completed=True)
+        WorkoutSet.objects.create(session=back_session, exercise=back, completed=True)
+        # Per-day view: only that day's muscles are loaded.
+        today_states = region_states(self.user, on_date=today)
+        chest_regions = REGIONS["chest"]
+        back_regions = REGIONS["back"]
+        self.assertTrue(all(today_states[r] > 0 for r in chest_regions))
+        self.assertTrue(all(today_states[r] == 0 for r in back_regions))
+        yesterday_states = region_states(self.user, on_date=yesterday)
+        self.assertTrue(all(yesterday_states[r] == 0 for r in chest_regions))
+        self.assertTrue(all(yesterday_states[r] > 0 for r in back_regions))
+        # Window view still sees both.
+        week_states = region_states(self.user, 7)
+        self.assertTrue(any(week_states[r] > 0 for r in chest_regions))
+        self.assertTrue(any(week_states[r] > 0 for r in back_regions))
+        # muscle_summary honours on_date the same way.
+        self.assertEqual(muscle_summary(self.user, "chest", on_date=today), {"direct": 1, "indirect": 0})
+        self.assertEqual(muscle_summary(self.user, "chest", on_date=yesterday), {"direct": 0, "indirect": 0})
+
+    def test_workouts_view_day_filter_and_options(self):
+        from django.test import Client
+        chest = Exercise.objects.create(
+            user=self.user, name="Bench", primary_muscles=["chest"]
+        )
+        today = timezone.localdate()
+        session = WorkoutSession.objects.create(
+            user=self.user,
+            name="Push",
+            started_at=timezone.make_aware(
+                datetime.combine(today, time.min)
+            ) + timedelta(hours=10),
+        )
+        WorkoutSet.objects.create(session=session, exercise=chest, completed=True)
+        client = Client()
+        client.force_login(self.user)
+        response = client.get("/workouts/")
+        self.assertIn(today, response.context["training_day_options"])
+        self.assertIsNone(response.context["selected_training_day"])
+        response = client.get("/workouts/", {"day": today.strftime("%Y-%m-%d")})
+        self.assertEqual(response.context["selected_training_day"], today)
+        self.assertContains(response, f"Training load · {today.strftime('%a %-d %b')}")
+        # Invalid or unknown days fall back to the 7-day view.
+        response = client.get("/workouts/", {"day": "not-a-date"})
+        self.assertIsNone(response.context["selected_training_day"])
+        response = client.get("/workouts/", {"day": "2020-01-01"})
+        self.assertIsNone(response.context["selected_training_day"])
 
     def test_recovery_states(self):
         chest = Exercise.objects.create(

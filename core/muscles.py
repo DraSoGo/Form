@@ -4,7 +4,7 @@ These helpers estimate training load and recovery state from logged sets.
 They are not medical or physiological measurements.
 """
 
-from datetime import timedelta
+from datetime import datetime, time, timedelta
 
 from django.utils import timezone
 
@@ -232,19 +232,27 @@ def _intensity(sets):
     return 10
 
 
-def _set_counts(user, days=7):
-    """Return raw completed, non-warmup set counts per canonical muscle."""
-    since = timezone.now() - timedelta(days=days)
+def _set_counts(user, days=7, on_date=None):
+    """Return raw completed, non-warmup set counts per canonical muscle.
+
+    on_date limits counting to a single user-local day; days is otherwise
+    a lookback window from now.
+    """
     counts = {muscle: 0 for muscle in MUSCLES}
-    sets = (
-        WorkoutSet.objects.filter(
-            session__user=user,
-            completed=True,
+    sets = WorkoutSet.objects.filter(
+        session__user=user,
+        completed=True,
+    ).exclude(set_type="warmup")
+    if on_date is not None:
+        start = timezone.make_aware(datetime.combine(on_date, time.min))
+        sets = sets.filter(
+            session__started_at__gte=start,
+            session__started_at__lt=start + timedelta(days=1),
         )
-        .exclude(set_type="warmup")
-        .filter(session__started_at__gte=since)
-        .select_related("exercise")
-    )
+    else:
+        since = timezone.now() - timedelta(days=days)
+        sets = sets.filter(session__started_at__gte=since)
+    sets = sets.select_related("exercise")
     for s in sets:
         for field in ("primary_muscles", "secondary_muscles"):
             for muscle in getattr(s.exercise, field) or []:
@@ -261,9 +269,12 @@ def volume_by_muscle(user, days=7):
     return {muscle: {"sets": count, "level": _level(count)} for muscle, count in counts.items()}
 
 
-def region_states(user, days=7):
-    """Return {region_id: intensity} for the body-muscles chart, 0-10 scale."""
-    counts = _set_counts(user, days)
+def region_states(user, days=7, on_date=None):
+    """Return {region_id: intensity} for the body-muscles chart, 0-10 scale.
+
+    on_date visualizes a single user-local day; otherwise the last N days.
+    """
+    counts = _set_counts(user, days, on_date=on_date)
     states = {}
     for muscle, count in counts.items():
         intensity = _intensity(count)
@@ -273,19 +284,26 @@ def region_states(user, days=7):
     return states
 
 
-def muscle_summary(user, muscle_key, days=7):
-    """Return {direct, indirect} set counts for one canonical muscle."""
-    since = timezone.now() - timedelta(days=days)
+def muscle_summary(user, muscle_key, days=7, on_date=None):
+    """Return {direct, indirect} set counts for one canonical muscle.
+
+    on_date limits counting to a single user-local day.
+    """
     direct = indirect = 0
-    sets = (
-        WorkoutSet.objects.filter(
-            session__user=user,
-            completed=True,
+    sets = WorkoutSet.objects.filter(
+        session__user=user,
+        completed=True,
+    ).exclude(set_type="warmup")
+    if on_date is not None:
+        start = timezone.make_aware(datetime.combine(on_date, time.min))
+        sets = sets.filter(
+            session__started_at__gte=start,
+            session__started_at__lt=start + timedelta(days=1),
         )
-        .exclude(set_type="warmup")
-        .filter(session__started_at__gte=since)
-        .select_related("exercise")
-    )
+    else:
+        since = timezone.now() - timedelta(days=days)
+        sets = sets.filter(session__started_at__gte=since)
+    sets = sets.select_related("exercise")
     for s in sets:
         primary = {normalize(m) for m in s.exercise.primary_muscles or []}
         secondary = {normalize(m) for m in s.exercise.secondary_muscles or []}

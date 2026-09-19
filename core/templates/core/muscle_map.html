@@ -27,7 +27,9 @@
   <div class="muscle-map-head">
     <div>
       <p class="eyebrow" style="margin:0">Muscle map</p>
-      <h3 style="margin:4px 0 0;font-size:18px">Training load, last 7 days</h3>
+      <h3 style="margin:4px 0 0;font-size:18px">
+        {% if selected_training_day %}Training load · {{ selected_training_day|date:"D j M" }}{% else %}Training load, last 7 days{% endif %}
+      </h3>
       <p class="muted" style="margin:6px 0 0;font-size:13px">
         Not a medical measure. Based on completed, non-warmup sets.
       </p>
@@ -41,7 +43,7 @@
   <div id="muscle-chart" class="muscle-chart" aria-label="Interactive body muscle map"></div>
 
   <p class="muscle-summary" id="muscle-summary" aria-live="polite">
-    Click a muscle to see its 7-day set totals.
+    Click a muscle to see its {% if selected_training_day %}set totals for that day{% else %}7-day set totals{% endif %}.
   </p>
 
   <div class="muscle-legend" aria-hidden="true">

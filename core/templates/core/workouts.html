@@ -61,6 +61,19 @@
 
 {# ── Muscle map ──────────────────────────────────────────────────── #}
 <h2>Muscle map</h2>
+{% if training_day_options %}
+<form class="filter-bar" method="get" action="/workouts/" aria-label="Muscle map day">
+  <label>View
+    <select name="day">
+      <option value="" {% if not selected_training_day %}selected{% endif %}>Last 7 days</option>
+      {% for d in training_day_options %}
+        <option value="{{ d|date:'Y-m-d' }}" {% if d == selected_training_day %}selected{% endif %}>{{ d|date:"D j M" }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <button>Apply</button>
+</form>
+{% endif %}
 {% include "core/muscle_map.html" %}
 
 {# ── Manual session start (fallback, also the "unplanned" anchor) ─── #}

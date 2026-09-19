@@ -476,8 +476,29 @@ def workouts(request):
                 "more": max(0, len(items) - 3),
                 "today": day_name == scheduled,
             })
+    # Muscle map: per training day via ?day=, defaulting to the last 7 days.
+    training_days = list(
+        WorkoutSession.objects.filter(user=request.user)
+        .exclude(name="Rest")
+        .values_list("started_at", flat=True)
+        .order_by("-started_at")[:14]
+    )
+    day_options = sorted(
+        {timezone.localtime(s).date() for s in training_days}, reverse=True
+    )[:10]
+    selected_day = None
+    day_param = request.GET.get("day", "")
+    try:
+        parsed = datetime.strptime(day_param, "%Y-%m-%d").date() if day_param else None
+        if parsed in day_options:
+            selected_day = parsed
+    except ValueError:
+        selected_day = None
     muscle_groups = [
-        {"key": muscle, **muscle_summary(request.user, muscle)}
+        {
+            "key": muscle,
+            **muscle_summary(request.user, muscle, on_date=selected_day),
+        }
         for muscle in ["chest", "back", "shoulders", "biceps", "triceps", "abs", "glutes", "quads", "hamstrings", "calves"]
     ]
     return render(
@@ -492,8 +513,10 @@ def workouts(request):
             "archived_exercises": Exercise.objects.filter(user=request.user, archived=True),
             "legacy_cardio": CardioEntry.objects.filter(user=request.user)[:30],
             "volume": weekly_volume(request.user),
-            "muscle_regions": region_states(request.user, 7),
+            "muscle_regions": region_states(request.user, 7, on_date=selected_day),
             "muscle_groups": muscle_groups,
+            "training_day_options": day_options,
+            "selected_training_day": selected_day,
         },
     )
 
