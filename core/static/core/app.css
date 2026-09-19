@@ -373,6 +373,11 @@ form p { margin: 12px 0; }
   min-width: 0;
 }
 .row > * { min-width: 0; }
+/* Buttons keep their label on one line: rows on narrow screens must not
+   squeeze them into vertical letters (D/L/E/T/E). */
+.row > form,
+.row > .session-end { flex: 0 0 auto; }
+.row button { white-space: nowrap; }
 .row:hover { text-decoration: none; }
 .row a { text-decoration: none; }
 .row form { margin: 0; }
