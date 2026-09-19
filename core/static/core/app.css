@@ -1749,7 +1749,7 @@ nav a[aria-current="page"]::after {
 }
 .food-row .food-summary {
   display: grid;
-  grid-template-columns: 1fr auto auto auto;
+  grid-template-columns: 1fr auto auto auto auto;
   align-items: center;
   gap: 12px;
   padding: 14px 14px 14px 4px;
@@ -1757,7 +1757,20 @@ nav a[aria-current="page"]::after {
   color: var(--ink);
   list-style: none;
 }
+/* The global summary::after "+" must not become a stray grid item here. */
+.food-row .food-summary::after { content: none; }
 .food-row .food-summary::-webkit-details-marker { display: none; }
+.food-row .food-chevron {
+  width: 18px;
+  height: 18px;
+  color: var(--muted);
+  flex: 0 0 auto;
+  transition: transform .2s ease;
+}
+.food-row details[open] .food-chevron {
+  transform: rotate(90deg);
+  color: var(--primary-hover);
+}
 .food-row .food-name {
   display: flex;
   flex-direction: column;
