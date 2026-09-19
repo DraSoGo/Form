@@ -1185,7 +1185,7 @@ nav a[aria-current="page"]::after {
 
 /* Advanced measurements — collapsed inner panel on --highlight */
 .advanced {
-  margin: 16px 0 4px;
+  margin: 16px 0 10px;
   background: var(--highlight);
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
@@ -1215,8 +1215,8 @@ nav a[aria-current="page"]::after {
 .advanced[open] > summary::after { content: "−"; }
 .advanced[open] > summary { border-bottom: 1px solid var(--border); }
 .advanced > .form-grid {
-  padding: 14px 16px 4px;
-  gap: 10px;
+  padding: 16px 18px 14px;
+  gap: 12px;
 }
 
 /* Measurement history — compact rows at all viewports */

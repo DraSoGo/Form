@@ -34,7 +34,7 @@
 {# ── Quick-add cards (anchors #weight, #sleep, #steps land here) ──── #}
 <div class="quick-add-grid">
   <a class="quick-add-card" id="weight" href="#weight-field">
-    <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M9 5h6"/><path d="M9 5 6 19h12L15 5"/><path d="M6 19a3 3 0 1 0 6 0"/><path d="M12 19a3 3 0 1 0 6 0"/></svg>
+    <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v4"/><path d="M6 21h12"/><path d="M8 21l2.5-11"/><path d="M16 21l-2.5-11"/><path d="M12 7a1.5 1.5 0 1 0 0-.01"/><path d="M8 6.5c1.2-1 6.8-1 8 0"/></svg>
     <span class="quick-add-title">Weight</span>
     <span class="quick-add-hint">Jump to the weight field below</span>
   </a>
@@ -44,7 +44,7 @@
     <span class="quick-add-hint">Log last night's hours</span>
   </a>
   <a class="quick-add-card" id="steps" href="/add/step/">
-    <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M7 4a2 2 0 1 0 0 4 2 2 0 0 0 0-4Z"/><path d="M9 9c-2 0-3 1-3 3 0 2 3 3 3 6"/><path d="M14 13c-2-1-3 0-3 2 0 3 4 3 4 6"/><path d="M17 8a2 2 0 1 0 0 4 2 2 0 0 0 0-4Z"/><path d="M15 12c0-2 1-3 3-3"/></svg>
+    <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M7 4a1.8 1.8 0 1 0 0 3.6A1.8 1.8 0 0 0 7 4Z"/><path d="M7 8.5c-2.2 0-3 1.5-3 3.5s1.5 4 1.5 6.5c0 1.2.7 1.5 1.5 1.5s1.5-.3 1.5-1.5c0-2.5 1.5-4.5 1.5-6.5s-.8-3.5-3-3.5Z"/><path d="M17 8a1.8 1.8 0 1 0 0 3.6A1.8 1.8 0 0 0 17 8Z"/><path d="M17 12.5c-2.2 0-3 1.5-3 3.5s1.5 4 1.5 6.5c0 1.2.7 1.5 1.5 1.5s1.5-.3 1.5-1.5c0-2.5 1.5-4.5 1.5-6.5s-.8-3.5-3-3.5Z"/></svg>
     <span class="quick-add-title">Steps</span>
     <span class="quick-add-hint">Record today's count</span>
   </a>
@@ -56,8 +56,6 @@
 
   <form method="post">
     {% csrf_token %}
-    {# Hidden flag: view binds AdvancedBodyForm when present. Closed-details
-       children still submit, so this stays true for every save. #}
     <input type="hidden" name="advanced" value="1">
 
     <div class="form-grid">
@@ -70,8 +68,6 @@
       {% endfor %}
     </div>
 
-    {# Advanced measurements — progressive disclosure. Children submit
-       regardless of details state; AdvancedBodyForm treats empties as None. #}
     {% if advanced_fields %}
     <details class="advanced">
       <summary>Advanced measurements</summary>
