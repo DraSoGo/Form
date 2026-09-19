@@ -229,7 +229,7 @@ class CoreFlowTests(TestCase):
         legacy = CardioEntry.objects.create(user=self.user, kind='Run', minutes=20)
         step = StepEntry.objects.create(user=self.user, steps=8500)
         body = self.client.get('/body/')
-        self.assertContains(body, '+ Steps')
+        self.assertContains(body, 'id="steps"')
         self.assertContains(body, '8500')
         self.assertNotContains(body, '+ Cardio')
         training = self.client.get('/workouts/')
@@ -499,3 +499,55 @@ class CoreFlowTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.context['active_status'], '')
         self.assertEqual(len(list(response.context['foods'])), 2)
+
+    def test_body_base_form_saves_without_advanced_fields(self):
+        payload = {
+            'recorded_at': timezone.localtime().strftime('%Y-%m-%dT%H:%M'),
+            'source': 'manual',
+            'weight': '80',
+            'body_fat': '20',
+        }
+        self.assertEqual(self.client.post('/body/', payload).status_code, 302)
+        measurement = BodyMeasurement.objects.get()
+        self.assertEqual((measurement.weight, measurement.body_fat), (Decimal('80'), Decimal('20')))
+        self.assertIsNone(measurement.muscle)
+        self.assertIsNone(measurement.bmr)
+
+    def test_body_advanced_form_saves_advanced_fields(self):
+        payload = {
+            'recorded_at': timezone.localtime().strftime('%Y-%m-%dT%H:%M'),
+            'source': 'manual',
+            'weight': '80',
+            'body_fat': '20',
+            'advanced': '1',
+            'muscle': '40.5',
+            'bmr': '1600',
+        }
+        self.assertEqual(self.client.post('/body/', payload).status_code, 302)
+        measurement = BodyMeasurement.objects.get()
+        self.assertEqual(measurement.muscle, Decimal('40.5'))
+        self.assertEqual(measurement.bmr, Decimal('1600'))
+
+    def test_body_edit_uses_advanced_form(self):
+        measurement = BodyMeasurement.objects.create(
+            user=self.user, weight=80, body_fat=20, muscle=40.5, bmr=1600,
+        )
+        response = self.client.get(f'/edit/body/{measurement.pk}/')
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'Muscle')
+
+    def test_body_context_latest_summary(self):
+        first = BodyMeasurement.objects.create(
+            user=self.user, weight=80, body_fat=20,
+            recorded_at=timezone.now() - timedelta(hours=2),
+        )
+        second = BodyMeasurement.objects.create(
+            user=self.user, weight=79, body_fat=19,
+            recorded_at=timezone.now(),
+        )
+        response = self.client.get('/body/')
+        self.assertEqual(response.status_code, 200)
+        latest = response.context['latest']
+        self.assertEqual(latest['weight'], second.weight)
+        self.assertEqual(latest['body_fat'], second.body_fat)
+        self.assertEqual(latest['source'], second.source)

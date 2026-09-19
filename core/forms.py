@@ -16,7 +16,26 @@ def model_form(model,fields=None):
             pass
     F.Meta.model=model;F.Meta.fields=fields or '__all__';F.Meta.exclude=['user','id','created_at']
     return forms.modelform_factory(model,form=F,fields=fields,exclude=['user','id','created_at'])
-BodyForm=model_form(BodyMeasurement)
+
+
+class BodyForm(StyledModelForm):
+    """Base measurement form: recorded time, source, weight, body fat."""
+
+    class Meta:
+        model = BodyMeasurement
+        fields = ["recorded_at", "source", "weight", "body_fat"]
+
+
+class AdvancedBodyForm(BodyForm):
+    """Full form including advanced measurements, used inside a collapsed
+    'Advanced measurements' section."""
+
+    class Meta(BodyForm.Meta):
+        fields = BodyForm.Meta.fields + [
+            "muscle", "visceral_fat", "body_age", "bmr", "bmi"
+        ]
+
+
 SleepForm=model_form(SleepEntry)
 CardioForm=model_form(CardioEntry)
 StepForm=model_form(StepEntry)

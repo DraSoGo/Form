@@ -84,7 +84,9 @@ def dashboard(request):
 
 
 def body(request):
-    form = BodyForm(request.POST or None)
+    use_advanced = request.POST.get("advanced") == "1"
+    form_class = AdvancedBodyForm if use_advanced else BodyForm
+    form = form_class(request.POST or None)
     if request.method == "POST" and form.is_valid():
         item = form.save(commit=False)
         item.user = request.user
@@ -97,11 +99,24 @@ def body(request):
             request, "Measurement saved. Previous readings remain in your history."
         )
         return redirect("/body/")
+    advanced_form = AdvancedBodyForm()
+    latest = BodyMeasurement.objects.filter(user=request.user).order_by("-recorded_at").first()
+    latest_summary = {
+        "weight": latest.weight,
+        "body_fat": latest.body_fat,
+        "recorded_at": latest.recorded_at,
+        "source": latest.source,
+    } if latest else {}
     return render(
         request,
         "core/body.html",
         {
             "form": form,
+            "advanced_form": advanced_form,
+            "advanced_fields": [
+                advanced_form[f] for f in ("muscle", "visceral_fat", "body_age", "bmr", "bmi")
+            ],
+            "latest": latest_summary,
             "measurements": BodyMeasurement.objects.filter(user=request.user)[:100],
             "sleep": SleepEntry.objects.filter(user=request.user)[:14],
             "steps": StepEntry.objects.filter(user=request.user)[:30],
@@ -111,7 +126,7 @@ def body(request):
 
 def generic_edit(request, kind, pk=None):
     mapping = {
-        "body": (BodyMeasurement, BodyForm, "Body measurement"),
+        "body": (BodyMeasurement, AdvancedBodyForm, "Body measurement"),
         "sleep": (SleepEntry, SleepForm, "Sleep"),
         "cardio": (CardioEntry, CardioForm, "Cardio"),
         "step": (StepEntry, StepForm, "Steps"),
