@@ -38,6 +38,50 @@
   <span class="total-pill">{{ selected_date|date:"D j M" }}</span>
 </dl>
 
+{# ── Saved food & meal templates — near the top, collapsed by default,
+       side-by-side on desktop so entries aren't pushed down ──────────── #}
+<div class="quick-tools">
+  <details class="card">
+    <summary>Personal food library</summary>
+    {% for item in library %}
+      <div class="row">
+        <a href="/edit/library/{{ item.pk }}/">{{ item.name }} · {{ item.quantity }}</a>
+        <div class="actions">
+          <form method="post" action="/library/{{ item.pk }}/use/" style="margin:0">
+            {% csrf_token %}<button>Log</button>
+          </form>
+          <form method="post" action="/delete/library/{{ item.pk }}/" style="margin:0">
+            {% csrf_token %}<button class="secondary">Delete</button>
+          </form>
+        </div>
+      </div>
+    {% empty %}
+      <p class="muted">Saved foods you log will appear here.</p>
+    {% endfor %}
+  </details>
+
+  <details class="card">
+    <summary>Meal templates</summary>
+    {% for item in templates %}
+      <div class="row">
+        <form method="post" action="/templates/{{ item.pk }}/use/" style="margin:0;flex:1">
+          {% csrf_token %}<p style="margin:0">{{ item.name }}</p>
+        </form>
+        <div class="actions">
+          <form method="post" action="/templates/{{ item.pk }}/use/" style="margin:0">
+            {% csrf_token %}<button>Log meal</button>
+          </form>
+          <form method="post" action="/delete/template/{{ item.pk }}/" style="margin:0">
+            {% csrf_token %}<button class="secondary">Delete</button>
+          </form>
+        </div>
+      </div>
+    {% empty %}
+      <p class="muted">Save a meal template from the entries below to log it again in one click.</p>
+    {% endfor %}
+  </details>
+</div>
+
 {# ── Filters — GET form, no JS required ────────────────────────────── #}
 <form class="filter-bar" method="get" action="/nutrition/">
   <a class="today-link" href="/nutrition/?date=today" aria-label="Jump to today">Today</a>
@@ -132,15 +176,7 @@
         </li>
       {% endfor %}
     </ul>
-  {% else %}
-    <p class="muted">No meals logged for this day.</p>
-    <div class="actions">
-      <a class="button" href="/nutrition/new/">+ Log food / photo</a>
-    </div>
-  {% endif %}
 
-  {# Template-save form only renders when entries exist #}
-  {% if foods %}
     <div class="actions" style="margin-top:14px;flex-wrap:wrap;align-items:end;gap:12px">
       <label for="template-name" style="margin:0;flex:1 1 220px">
         Meal template name
@@ -148,49 +184,12 @@
       </label>
       <button type="submit">Save selected as template</button>
     </div>
+  {% else %}
+    <p class="muted">No meals logged for this day.</p>
+    <div class="actions">
+      <a class="button" href="/nutrition/new/">+ Log food / photo</a>
+    </div>
   {% endif %}
 </form>
-
-{# ── Personal food library ───────────────────────────────────────────── #}
-<details class="card" style="margin-top:18px">
-  <summary>Personal food library</summary>
-  {% for item in library %}
-    <div class="row">
-      <a href="/edit/library/{{ item.pk }}/">{{ item.name }} · {{ item.quantity }}</a>
-      <div class="actions">
-        <form method="post" action="/library/{{ item.pk }}/use/" style="margin:0">
-          {% csrf_token %}<button>Log</button>
-        </form>
-        <form method="post" action="/delete/library/{{ item.pk }}/" style="margin:0">
-          {% csrf_token %}<button class="secondary">Delete</button>
-        </form>
-      </div>
-    </div>
-  {% empty %}
-    <p class="muted">Saved foods you log will appear here.</p>
-  {% endfor %}
-</details>
-
-{# ── Meal templates ─────────────────────────────────────────────────── #}
-<details class="card">
-  <summary>Meal templates</summary>
-  {% for item in templates %}
-    <div class="row">
-      <form method="post" action="/templates/{{ item.pk }}/use/" style="margin:0;flex:1">
-        {% csrf_token %}<p style="margin:0">{{ item.name }}</p>
-      </form>
-      <div class="actions">
-        <form method="post" action="/templates/{{ item.pk }}/use/" style="margin:0">
-          {% csrf_token %}<button>Log meal</button>
-        </form>
-        <form method="post" action="/delete/template/{{ item.pk }}/" style="margin:0">
-          {% csrf_token %}<button class="secondary">Delete</button>
-        </form>
-      </div>
-    </div>
-  {% empty %}
-    <p class="muted">Save a meal template from the entries above to log it again in one click.</p>
-  {% endfor %}
-</details>
 
 {% endblock %}
