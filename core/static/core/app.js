@@ -74,7 +74,15 @@ const chartData=document.querySelector('#chart-data');if(chartData){const charts
   // class="body-chart-muscle" and inline <title> nodes; we rely on the
   // library's onMuscleClick callback for the data.
   const summary = document.getElementById('muscle-summary');
-  function setSummary(name, group) {
+  const LEVEL_LABELS = ['No data', 'Low', 'Low', 'Moderate', 'Moderate', 'Moderate', 'High', 'High', 'Very high', 'Very high', 'Very high'];
+  function intensityForGroup(key) {
+    // All regions of a group share the same intensity; take the first.
+    for (const id in regions) {
+      if (REGION_TO_GROUP[id] === key) return Number(regions[id] || 0);
+    }
+    return 0;
+  }
+  function setSummary(name, group, key) {
     if (!summary) return;
     if (!group) {
       summary.textContent = `${name}: no data in the last 7 days.`;
@@ -82,10 +90,17 @@ const chartData=document.querySelector('#chart-data');if(chartData){const charts
     }
     const direct   = Number(group.direct   || 0);
     const indirect = Number(group.indirect || 0);
+    const intensity = key ? intensityForGroup(key) : 0;
+    const level = LEVEL_LABELS[Math.max(0, Math.min(10, Math.round(intensity)))];
     summary.innerHTML = '';
     const strong = document.createElement('strong');
     strong.textContent = name;
-    summary.append(strong, `: ${direct} direct sets, ${indirect} indirect sets in the last 7 days.`);
+    const levelTag = document.createElement('em');
+    levelTag.textContent = ` (${level})`;
+    levelTag.style.fontStyle = 'normal';
+    levelTag.style.color = colorFor(intensity);
+    levelTag.style.fontWeight = '700';
+    summary.append(strong, levelTag, `: ${direct} direct sets, ${indirect} indirect sets in the last 7 days.`);
   }
 
   // Map asset region id → canonical group key. The library has ~70 ids
@@ -156,7 +171,7 @@ const chartData=document.querySelector('#chart-data');if(chartData){const charts
         const key = groupKeyFor(regionId);
         const group = key ? groupByKey[key] : null;
         const label = key ? KEY_LABEL[key] : libraryName;
-        setSummary(label, group);
+        setSummary(label, group, key);
         // Update selection state (selected muscle outline)
         const next = buildBodyState();
         for (const id in next) next[id].selected = (id === regionId);
