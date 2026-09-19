@@ -718,7 +718,10 @@ nav a[aria-current="page"]::after {
   z-index: 60;
   list-style: none;
   margin: 0;
+  /* Hidden menus must not intercept clicks over the page content. */
+  display: none;
 }
+.quicklog[open] .quicklog-menu { display: block; }
 .quicklog-menu a {
   display: block;
   padding: 10px 12px;
@@ -1949,4 +1952,26 @@ main { min-width: 0; }
     transition-duration: 0.001ms !important;
     scroll-behavior: auto !important;
   }
+}
+/* Today's movement — exercise list on the dashboard accent card */
+.today-exercise-list {
+  list-style: none;
+  margin: 10px 0 4px;
+  padding: 0;
+  border-top: 1px solid var(--border);
+}
+.today-exercise-list li {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 12px;
+  padding: 7px 0;
+  border-bottom: 1px solid var(--border);
+  font-size: 14px;
+}
+.today-exercise-list li:last-child { border-bottom: 0; }
+.today-exercise-list small {
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
 }
