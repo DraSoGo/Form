@@ -53,7 +53,7 @@ def _version(user, model, expected):
 @transaction.atomic
 def create_target(user, data, reason="", expected_version=None):
     version = _version(user, NutritionTarget, expected_version)
-    if set(data) - set(NUTRIENTS[:5]):
+    if set(data) - set(NUTRIENTS[:5] + ["sugar", "sodium"]):
         raise ValidationError("Unknown target fields")
     obj = NutritionTarget(user=user, version=version, reason=reason, **data)
     obj.full_clean()

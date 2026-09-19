@@ -40,7 +40,14 @@ SleepForm=model_form(SleepEntry)
 CardioForm=model_form(CardioEntry)
 StepForm=model_form(StepEntry)
 EquipmentForm=model_form(Equipment)
-TargetForm=model_form(NutritionTarget,NUTRIENT_FIELDS if False else ['calories','protein','carbs','fat','fiber'])
+class TargetForm(model_form(NutritionTarget,['calories','protein','carbs','fat','fiber','sugar','sodium'])):
+    def __init__(self,*args,**kwargs):
+        super().__init__(*args,**kwargs)
+        # sugar/sodium are optional targets: empty input saves as None.
+        for name in ('sugar','sodium'):
+            self.fields[name].required=False
+        self.fields['sugar'].label='Sugar (g)'
+        self.fields['sodium'].label='Sodium (mg)'
 FoodForm=model_form(FoodEntry,['recorded_at','name','quantity','calories','protein','carbs','fat','fiber','sugar','sodium','note','state'])
 LibraryForm=model_form(FoodLibrary)
 ExerciseForm=model_form(Exercise)
