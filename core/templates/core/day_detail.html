@@ -1,0 +1,131 @@
+{% extends "core/base.html" %}
+{% block title %}{{ day_name }} · Train · Form{% endblock %}
+
+{% block content %}
+
+<p class="eyebrow">Training plan</p>
+<h1 class="day-name-link">
+  <a class="day-name-anchor" href="/workouts/day/{{ day_name|urlencode }}/">{{ day_name }}</a>
+  {% if is_today %}<span class="today-tag">Today</span>{% endif %}
+</h1>
+<p class="muted">
+  Version {{ plan.version|default:0 }} · exercises for this day
+</p>
+
+{% if form_errors %}<p class="errorlist" role="alert">{{ form_errors }}</p>{% endif %}
+
+{# ── Exercise list ─────────────────────────────────────────────────── #}
+<h2>Exercises on {{ day_name }}</h2>
+
+{% if day_exercises %}
+  <ul class="day-exercises">
+    {% for item in day_exercises %}
+      <li class="day-exercise">
+        <div class="day-exercise-info">
+          {% if item.missing %}
+            <strong class="day-exercise-name">Missing exercise</strong>
+            <small class="muted">removed from your library</small>
+          {% else %}
+            <strong class="day-exercise-name">{{ item.name }}</strong>
+            <small class="day-exercise-meta">
+              {% if item.activity_type == "cardio" %}
+                {{ item.minutes|default:0 }} min
+              {% else %}
+                {{ item.sets|default:3 }} × {{ item.rep_min|default:8 }}–{{ item.rep_max|default:12 }}
+                · rest {{ item.rest|default:90 }}s
+                {% if item.rir is not None %} · RIR {{ item.rir }}{% endif %}
+                {% if item.rpe is not None %} · RPE {{ item.rpe }}{% endif %}
+              {% endif %}
+            </small>
+            {% if item.notes %}<small class="day-exercise-notes muted">{{ item.notes }}</small>{% endif %}
+          {% endif %}
+        </div>
+        <form method="post" class="day-exercise-remove">
+          {% csrf_token %}
+          <input type="hidden" name="action" value="remove">
+          <input type="hidden" name="index" value="{{ item.index }}">
+          <button class="secondary" type="submit">Remove</button>
+        </form>
+      </li>
+    {% endfor %}
+  </ul>
+{% else %}
+  <p class="muted">No exercises on this day yet — add the first one below.</p>
+{% endif %}
+
+{# ── Add exercise ──────────────────────────────────────────────────── #}
+<details class="card" open>
+  <summary>Add exercise to {{ day_name }}</summary>
+
+  <form method="post" id="day-add-form">
+    {% csrf_token %}
+    <input type="hidden" name="action" value="add">
+
+    <label>Exercise
+      <select name="exercise" required id="day-exercise-select">
+        {% for e in library %}
+          <option value="{{ e.pk }}"
+                  data-activity="{{ e.activity_type }}"
+                  data-default-minutes="{{ e.default_minutes|default:20 }}">{{ e.name }} · {{ e.get_activity_type_display }}</option>
+        {% endfor %}
+      </select>
+    </label>
+
+    <div class="form-grid strength-fields">
+      <label>Sets<input name="sets" type="number" min="1" max="30" value="3" required></label>
+      <label>Minimum reps<input name="rep_min" type="number" min="1" max="100" value="8" required></label>
+      <label>Maximum reps<input name="rep_max" type="number" min="1" max="100" value="12" required></label>
+      <label>Rest seconds<input name="rest" type="number" min="0" max="3600" value="90" required></label>
+      <label>Target RIR<input name="rir" type="number" min="0" max="10" step="0.5"></label>
+      <label>Target RPE<input name="rpe" type="number" min="0" max="10" step="0.5"></label>
+    </div>
+
+    <div class="form-grid cardio-fields" hidden>
+      <label>Duration (minutes)<input name="minutes" type="number" min="1" max="1440" value="20" required></label>
+    </div>
+
+    <label>Notes
+      <textarea name="notes" maxlength="2000" rows="2"></textarea>
+    </label>
+
+    <div class="actions" style="margin-top:14px">
+      <button type="submit">Add to {{ day_name }}</button>
+    </div>
+  </form>
+</details>
+
+{# ── Footer ────────────────────────────────────────────────────────── #}
+<div class="actions" style="margin-top:18px">
+  <form method="post" action="/workouts/start/" style="margin:0">
+    {% csrf_token %}
+    <input type="hidden" name="name" value="{{ day_name }}">
+    <button>Start {{ day_name }} →</button>
+  </form>
+  <a class="button secondary" href="/workouts/day/{{ day_name|urlencode }}/" aria-label="View day">View day</a>
+  <a class="subtle-link" href="/workouts/">Back to training</a>
+</div>
+
+<script>
+(function(){
+  const form = document.getElementById('day-add-form');
+  if (!form) return;
+  const select = document.getElementById('day-exercise-select');
+  const strength = form.querySelector('.strength-fields');
+  const cardio = form.querySelector('.cardio-fields');
+  const minutes = form.querySelector('input[name="minutes"]');
+  const update = () => {
+    const isCardio = select.selectedOptions[0]?.dataset.activity === 'cardio';
+    strength.hidden = isCardio;
+    cardio.hidden = !isCardio;
+    strength.querySelectorAll('input').forEach(i => { i.disabled = isCardio; });
+    cardio.querySelectorAll('input').forEach(i => { i.disabled = !isCardio; });
+    if (isCardio && !minutes.value) {
+      minutes.value = select.selectedOptions[0]?.dataset.defaultMinutes || '20';
+    }
+  };
+  select.addEventListener('change', update);
+  update();
+})();
+</script>
+
+{% endblock %}

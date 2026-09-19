@@ -16,6 +16,7 @@ urlpatterns = [
     path("targets/", views.targets),
     path("workouts/", views.workouts, name="workouts"),
     path("workouts/plan/", views.plan_edit),
+    path("workouts/day/<str:day_name>/", views.plan_day, name="plan_day"),
     path("workouts/start/", views.session_start),
     path("workouts/session/<uuid:pk>/", views.session_detail),
     path("workouts/set/<uuid:pk>/", views.set_edit),
