@@ -38,18 +38,21 @@ const chartData=document.querySelector('#chart-data');if(chartData){const charts
   // 3–5 → mid-green; 6–7 → amber; 8–10 → muted red. Colors verified to
   // pass AA contrast on the dark surface (#18211b) and must mirror the
   // CSS legend swatches in app.css.
+  // Blue → red intensity ramp: cool blues read clearly against the dark
+  // surface, and heat rises toward red. Must mirror the CSS legend
+  // swatches in app.css.
   const SCALE = [
     '#3a463d', // 0  no data
-    '#4a5d44', // 1
-    '#5e754f', // 2  low
-    '#6d8d54', // 3
-    '#7fa366', // 4  moderate
-    '#95b97a', // 5
-    '#c89a3a', // 6
-    '#d9a441', // 7  high
-    '#c46659', // 8
-    '#d9756e', // 9
-    '#b84b45', // 10 very high
+    '#4a7fb5', // 1
+    '#5b8fc4', // 2  low
+    '#6fa0d0', // 3
+    '#84b1dc', // 4  moderate
+    '#9bc2e6', // 5
+    '#e0b23e', // 6
+    '#e3a233', // 7  high
+    '#d97f56', // 8
+    '#d96a4e', // 9
+    '#c94b40', // 10 very high
   ];
   function colorFor(intensity) {
     const i = Math.max(0, Math.min(10, Math.round(intensity || 0)));

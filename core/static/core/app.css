@@ -993,10 +993,10 @@ nav a[aria-current="page"]::after {
 }
 /* Must mirror app.js SCALE exactly */
 .muscle-swatch.no-data    { --swatch: #3a463d; }
-.muscle-swatch.low        { --swatch: #5e754f; }
-.muscle-swatch.moderate   { --swatch: #7fa366; }
-.muscle-swatch.high       { --swatch: #d9a441; }
-.muscle-swatch.very-high  { --swatch: #d9756e; }
+.muscle-swatch.low        { --swatch: #5b8fc4; }
+.muscle-swatch.moderate   { --swatch: #84b1dc; }
+.muscle-swatch.high       { --swatch: #e0b23e; }
+.muscle-swatch.very-high  { --swatch: #d96a4e; }
 
 /* The body-muscles library renders its own colors. We restyle them here
    to enforce the dark-theme green-first scale on the frontend. The
