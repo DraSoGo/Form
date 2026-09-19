@@ -484,7 +484,7 @@ summary {
   align-items: center;
   gap: 10px;
 }
-.card summary { padding: 10px 0; min-height: 44px; }
+.card summary { padding: 10px; min-height: 44px; }
 summary::-webkit-details-marker { display: none; }
 summary::after {
   content: "+";
@@ -1737,7 +1737,6 @@ main { min-width: 0; }
 .card, .row > *, .form-grid > * { min-width: 0; }
 .row { overflow-wrap: anywhere; }
 .card details { margin: 20px 0; }
-.card summary { padding: 8px 0; min-height: 44px; }
 .errorlist { padding-left: 20px; }
 .helptext { line-height: 1.5; }
 
