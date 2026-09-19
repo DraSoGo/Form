@@ -1,7 +1,7 @@
 """Domain and browser regressions without external services or shared media."""
 import io
 import tempfile
-from datetime import timedelta
+from datetime import timedelta, datetime, time
 from decimal import Decimal
 from pathlib import Path
 
@@ -448,3 +448,54 @@ class CoreFlowTests(TestCase):
             html=True,
         )
         self.assertContains(response, '<a class="button" href="/coach/">Open coach</a>', html=False)
+
+    def test_nutrition_defaults_to_today_and_filters_by_date(self):
+        yesterday = timezone.localdate() - timedelta(days=1)
+        y_start = timezone.make_aware(datetime.combine(yesterday, time.min))
+        FoodEntry.objects.create(
+            user=self.user, name='Yesterday meal', calories=300,
+            protein=20, carbs=30, fat=10, fiber=2,
+            recorded_at=y_start + timedelta(hours=12),
+        )
+        FoodEntry.objects.create(
+            user=self.user, name='Today meal', calories=500,
+            protein=40, carbs=60, fat=10, fiber=4,
+        )
+        response = self.client.get('/nutrition/')
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.context['selected_date'], timezone.localdate())
+        foods = list(response.context['foods'])
+        self.assertEqual([f.name for f in foods], ['Today meal'])
+        self.assertEqual(response.context['totals']['calories'], 500)
+
+        response = self.client.get(f'/nutrition/?date={yesterday.isoformat()}')
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.context['selected_date'], yesterday)
+        foods = list(response.context['foods'])
+        self.assertEqual([f.name for f in foods], ['Yesterday meal'])
+        self.assertEqual(response.context['totals']['calories'], 300)
+
+        response = self.client.get('/nutrition/?date=invalid')
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.context['selected_date'], timezone.localdate())
+        foods = list(response.context['foods'])
+        self.assertEqual([f.name for f in foods], ['Today meal'])
+
+    def test_nutrition_filters_by_status_and_ignores_invalid_status(self):
+        FoodEntry.objects.create(
+            user=self.user, name='Manual entry', calories=200, state='manual',
+        )
+        FoodEntry.objects.create(
+            user=self.user, name='AI entry', calories=300, state='ai_estimated',
+        )
+        response = self.client.get('/nutrition/?status=ai_estimated')
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.context['active_status'], 'ai_estimated')
+        foods = list(response.context['foods'])
+        self.assertEqual(len(foods), 1)
+        self.assertEqual(foods[0].name, 'AI entry')
+
+        response = self.client.get('/nutrition/?status=bogus')
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.context['active_status'], '')
+        self.assertEqual(len(list(response.context['foods'])), 2)

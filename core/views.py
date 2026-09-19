@@ -211,16 +211,43 @@ def record_delete(request, kind, pk):
 
 def nutrition(request):
     today = timezone.localdate()
-    start = timezone.make_aware(datetime.combine(today, time.min))
+    date_param = request.GET.get("date", "today")
+    if date_param == "today":
+        selected_date = today
+    else:
+        try:
+            selected_date = datetime.strptime(date_param, "%Y-%m-%d").date()
+        except ValueError:
+            selected_date = today
+    start = timezone.make_aware(datetime.combine(selected_date, time.min))
+    end = start + timedelta(days=1)
+
+    active_status = request.GET.get("status", "")
+    valid_states = {
+        choice[0] for choice in FoodEntry._meta.get_field("state").choices
+    }
+    if active_status and active_status not in valid_states:
+        active_status = ""
+
+    foods = FoodEntry.objects.filter(
+        user=request.user, recorded_at__gte=start, recorded_at__lt=end
+    )
+    if active_status:
+        foods = foods.filter(state=active_status)
+    foods = foods.order_by("-recorded_at")[:100]
+
     return render(
         request,
         "core/nutrition.html",
         {
-            "foods": FoodEntry.objects.filter(user=request.user)[:100],
+            "foods": foods,
             "library": FoodLibrary.objects.filter(user=request.user),
             "templates": MealTemplate.objects.filter(user=request.user),
-            "totals": nutrition_totals(request.user, start, start + timedelta(days=1)),
+            "totals": nutrition_totals(request.user, start, end),
             "target": active_target(request.user),
+            "selected_date": selected_date,
+            "active_status": active_status,
+            "state_choices": FoodEntry._meta.get_field("state").choices,
         },
     )
 
@@ -776,8 +803,8 @@ def manifest(request):
             "start_url": "/",
             "scope": "/",
             "display": "standalone",
-            "background_color": "#f6f5ee",
-            "theme_color": "#214d3a",
+            "background_color": "#101613",
+            "theme_color": "#18211b",
             "icons": [
                 {
                     "src": "/static/core/icon-192.png",
