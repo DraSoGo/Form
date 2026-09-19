@@ -1,37 +1,41 @@
 /* =========================================================================
-   Form · light, warm, forest-green theme
+   Form · dark green-identity theme
 
-   Restored from the original 6-line base (green/off-white, Inter, 9px radius,
-   16px card radius, calm density). Tokens shifted only as the new palette
-   specifies. Class contract from the legacy templates is preserved verbatim
-   — only restyled — so nutrition.html, session.html, body.html, trends.html,
+   Same forest-green brand on a dark canvas. Tokens flipped from the
+   light slice: same designer names, dark values. Class contract from the
+   legacy templates (nutrition.html, session.html, body.html, trends.html,
    settings.html, form.html, food_form.html, exercise_form.html, plan.html,
-   import.html, login.html, volume.html, targets.html keep rendering.
+   import.html, login.html, volume.html, targets.html) is preserved
+   verbatim — only restyled — so every page renders correctly via the
+   shared token system.
    ========================================================================= */
 
 :root {
+  color-scheme: dark;
+
   /* Surface */
-  --canvas:    #f6f5ee;
-  --surface:   #ffffff;
-  --border:    #d8ded1;
-  --highlight: #e7efcf;
+  --canvas:    #101613;
+  --surface:   #18211b;
+  --surface-2: #1e2a22;
+  --border:    #2c3a30;
+  --highlight: #24352a;
 
   /* Ink */
-  --ink:       #173f2d;
-  --muted:     #647467;
+  --ink:       #e9f0e6;
+  --muted:     #9db2a0;
 
-  /* Primary */
-  --primary:       #1d4b35;
-  --primary-hover: #143827;
+  /* Primary (green identity preserved) */
+  --primary:       #6d8d54;
+  --primary-hover: #7fa366;
   --accent:        #6d8d54;
 
   /* Status */
-  --warning: #c58b2a;
-  --danger:  #b84b45;
+  --warning: #d9a441;
+  --danger:  #d9756e;
 
   /* Derived */
-  --shadow-1: 0 1px 0 rgba(23,63,45,.02), 0 1px 2px rgba(23,63,45,.04);
-  --shadow-2: 0 8px 24px -10px rgba(23,63,45,.18);
+  --shadow-1: 0 1px 0 rgba(255,255,255,.02), 0 12px 28px -18px rgba(0,0,0,.7);
+  --shadow-2: 0 18px 42px -22px rgba(0,0,0,.8);
   --radius:     14px;
   --radius-sm:  10px;
   --radius-pill: 999px;
@@ -62,10 +66,10 @@ svg { fill: currentColor; }
 a {
   color: var(--ink);
   text-underline-offset: 4px;
-  text-decoration-color: rgba(29,75,53,.35);
+  text-decoration-color: rgba(125, 163, 102, .45);
   transition: color .15s ease, text-decoration-color .15s ease;
 }
-a:hover { text-decoration-color: var(--primary); }
+a:hover { text-decoration-color: var(--primary-hover); }
 
 /* Focus */
 button:focus-visible,
@@ -75,13 +79,13 @@ textarea:focus-visible,
 select:focus-visible,
 summary:focus-visible,
 [tabindex]:focus-visible {
-  outline: 3px solid var(--accent);
+  outline: 3px solid var(--primary-hover);
   outline-offset: 2px;
   border-radius: var(--radius-sm);
 }
 
 /* =========================================================================
-   Header — same shape as the original
+   Header — shape unchanged, palette swapped
    ========================================================================= */
 header {
   max-width: 1160px;
@@ -138,7 +142,7 @@ main {
 }
 
 /* =========================================================================
-   Typography — original character preserved (clamp headings, tight brand)
+   Typography
    ========================================================================= */
 h1, h2, h3 {
   font-family: var(--font-display);
@@ -204,7 +208,7 @@ code {
 
 .card.accent {
   background: var(--highlight);
-  border-color: #cdd9b5;
+  border-color: var(--border);
 }
 .card .accent-intro {
   display: flex;
@@ -216,7 +220,8 @@ code {
 }
 
 /* =========================================================================
-   Buttons & actions
+   Buttons & actions — DARK TEXT on primary buttons for AA contrast
+   (5.09:1 #101613 on #6d8d54 — passes WCAG-AA for normal text)
    ========================================================================= */
 button, .button {
   display: inline-flex;
@@ -224,20 +229,21 @@ button, .button {
   justify-content: center;
   gap: 8px;
   background: var(--primary);
-  color: #fff;
+  color: #101613;
   border: 1px solid var(--primary);
   border-radius: var(--radius-sm);
   padding: 11px 18px;
   font: inherit;
-  font-weight: 650;
+  font-weight: 700;
   cursor: pointer;
   text-decoration: none;
   min-height: 44px;
-  transition: background .15s ease, border-color .15s ease, color .15s ease, transform .1s ease;
+  transition: background .15s ease, border-color .15s ease, color .15s ease, transform .1s ease, box-shadow .15s ease;
 }
 button:hover, .button:hover {
   background: var(--primary-hover);
   border-color: var(--primary-hover);
+  color: #101613;
   text-decoration: none;
 }
 button:active, .button:active { transform: translateY(1px); }
@@ -249,7 +255,7 @@ button:active, .button:active { transform: translateY(1px); }
 }
 .secondary:hover {
   background: var(--highlight);
-  border-color: var(--accent);
+  border-color: var(--primary);
   color: var(--ink);
 }
 
@@ -264,7 +270,7 @@ button:active, .button:active { transform: translateY(1px); }
 .action-form { gap: 12px; }
 
 /* =========================================================================
-   Forms
+   Forms — dark inputs with visible focus
    ========================================================================= */
 label {
   display: block;
@@ -289,17 +295,17 @@ input, select, textarea {
   color: var(--ink);
   padding: 11px 12px;
   border: 1px solid var(--border);
-  background: var(--surface);
+  background: var(--surface-2);
   border-radius: var(--radius-sm);
   min-height: 44px;
   margin: 4px 0 12px;
-  transition: border-color .15s ease, box-shadow .15s ease;
+  transition: border-color .15s ease, box-shadow .15s ease, background .15s ease;
   -webkit-appearance: none;
   appearance: none;
 }
 textarea { min-height: 110px; resize: vertical; }
 input::placeholder, textarea::placeholder { color: var(--muted); }
-input:hover, select:hover, textarea:hover { border-color: var(--accent); }
+input:hover, select:hover, textarea:hover { border-color: var(--primary); }
 
 input[type=checkbox], input[type=radio] {
   width: 20px;
@@ -308,7 +314,7 @@ input[type=checkbox], input[type=radio] {
   margin: 0 8px 0 0;
   vertical-align: middle;
   accent-color: var(--primary);
-  background: var(--surface);
+  background: var(--surface-2);
   border-radius: 4px;
 }
 input[type=file] { overflow: hidden; padding: 10px 12px; }
@@ -341,7 +347,7 @@ form p { margin: 12px 0; }
    ========================================================================= */
 .notice {
   background: var(--highlight);
-  border: 1px solid #d6e1bc;
+  border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   padding: 14px 16px;
   margin: 0 0 16px;
@@ -389,7 +395,7 @@ form p { margin: 12px 0; }
 #fixed-days h2, #fixed-days p { grid-column: 1 / -1; }
 
 /* =========================================================================
-   Progress & metrics — kept the original <progress> behavior, just cleaner
+   Progress & metrics
    ========================================================================= */
 .metric {
   display: flex;
@@ -416,8 +422,8 @@ progress {
   margin: 4px 0 0;
 }
 progress::-webkit-progress-bar  { background: var(--highlight); border-radius: var(--radius-pill); }
-progress::-webkit-progress-value { background: var(--accent); border-radius: var(--radius-pill); }
-progress::-moz-progress-bar      { background: var(--accent); border-radius: var(--radius-pill); }
+progress::-webkit-progress-value { background: var(--primary); border-radius: var(--radius-pill); }
+progress::-moz-progress-bar      { background: var(--primary); border-radius: var(--radius-pill); }
 
 /* =========================================================================
    Tables
@@ -519,7 +525,7 @@ details[open] > summary::after { content: "−"; }
   height: 140px;
   overflow: visible;
   display: block;
-  color: var(--accent);
+  color: var(--primary);
 }
 .chart polyline {
   fill: none;
@@ -555,7 +561,7 @@ details[open] > summary::after { content: "−"; }
 .skip-link:focus { top: 8px; }
 
 /* =========================================================================
-   Navigation — bottom bar on mobile, inline tabs on desktop
+   Navigation — bottom bar (mobile) / inline tabs (desktop)
    ========================================================================= */
 nav {
   position: fixed;
@@ -566,7 +572,7 @@ nav {
   justify-content: space-around;
   gap: 0;
   padding: 10px 8px calc(10px + env(safe-area-inset-bottom));
-  background: rgba(246, 245, 238, .92);
+  background: rgba(16, 22, 19, .88);
   -webkit-backdrop-filter: saturate(140%) blur(14px);
   backdrop-filter: saturate(140%) blur(14px);
   border-top: 1px solid var(--border);
@@ -594,7 +600,7 @@ nav a svg { width: 22px; height: 22px; color: currentColor; }
 nav a[aria-current="page"] {
   color: var(--ink);
   background: var(--highlight);
-  box-shadow: 0 0 0 1px rgba(109, 141, 84, .35);
+  box-shadow: 0 0 0 1px rgba(127, 163, 102, .40);
 }
 nav a[aria-current="page"]::after {
   content: "";
@@ -629,7 +635,7 @@ nav a[aria-current="page"]::after {
 }
 
 /* =========================================================================
-   Quick-log dropdown (header)
+   Quick-log dropdown
    ========================================================================= */
 .header-actions {
   display: flex;
@@ -655,7 +661,7 @@ nav a[aria-current="page"]::after {
 }
 .quicklog summary::-webkit-details-marker { display: none; }
 .quicklog summary::after { content: "▾"; font-size: 11px; color: var(--muted); margin-left: 2px; }
-.quicklog[open] summary { border-color: var(--accent); }
+.quicklog[open] summary { border-color: var(--primary); }
 .quicklog-menu {
   position: absolute;
   right: 0;
@@ -683,7 +689,7 @@ nav a[aria-current="page"]::after {
 .quicklog-menu small { display: block; font-weight: 400; color: var(--muted); margin-top: 2px; font-size: 12px; letter-spacing: 0; text-transform: none; }
 
 /* =========================================================================
-   Status chips (sessions, plans, jobs)
+   Status chips — recolored for AA contrast on dark
    ========================================================================= */
 .chip {
   display: inline-flex;
@@ -696,18 +702,19 @@ nav a[aria-current="page"]::after {
   text-transform: uppercase;
   border-radius: var(--radius-pill);
   border: 1px solid var(--border);
-  background: var(--canvas);
+  background: var(--surface-2);
   color: var(--muted);
   line-height: 1.4;
+  white-space: nowrap;
 }
-.chip.planned    { color: var(--muted);   background: var(--canvas);    border-color: var(--border); }
-.chip.in-progress{ color: var(--warning); background: #fbf2dd;             border-color: #e7c98a; }
-.chip.completed  { color: var(--primary); background: var(--highlight);  border-color: #b9c79a; }
-.chip.awaiting   { color: var(--warning); background: transparent;        border-color: var(--warning); }
-.chip.failed     { color: var(--danger);  background: #f7e1de;             border-color: #d99c97; }
+.chip.planned    { color: var(--muted);      background: var(--surface-2); border-color: var(--border); }
+.chip.in-progress{ color: #2a1e07;            background: #f3c679;          border-color: #d9a441; }
+.chip.completed  { color: #0d1a09;            background: #a3c585;          border-color: #7fa366; }
+.chip.awaiting   { color: var(--warning);    background: transparent;        border-color: var(--warning); }
+.chip.failed     { color: #2a0e0c;            background: #d9756e;          border-color: var(--danger); }
 
 /* =========================================================================
-   Stat tiles — compact recovery/body KPIs
+   Stat tiles
    ========================================================================= */
 .stat-grid {
   display: grid;
@@ -742,7 +749,7 @@ nav a[aria-current="page"]::after {
 .stat-value small { color: var(--muted); font-size: 13px; font-family: var(--font-body); margin-left: 4px; font-weight: 600; letter-spacing: 0; text-transform: none; }
 
 /* =========================================================================
-   Consistency strip (weekly dots)
+   Consistency strip
    ========================================================================= */
 .strip {
   display: flex;
@@ -764,12 +771,12 @@ nav a[aria-current="page"]::after {
   font-weight: 700;
   color: var(--muted);
 }
-.strip-day.done  { background: var(--primary); color: #fff; border-color: var(--primary); }
-.strip-day.partial { background: var(--accent); color: #fff; border-color: var(--accent); }
+.strip-day.done  { background: var(--primary); color: #101613; border-color: var(--primary); }
+.strip-day.partial { background: var(--primary-hover); color: #101613; border-color: var(--primary-hover); }
 .strip-caption { font-size: 12px; color: var(--muted); }
 
 /* =========================================================================
-   Plan-day cards (workouts)
+   Plan-day cards
    ========================================================================= */
 .plan-cards {
   display: grid;
@@ -791,9 +798,9 @@ nav a[aria-current="page"]::after {
   min-width: 0;
   transition: border-color .15s ease, box-shadow .15s ease;
 }
-.plan-card:hover { border-color: var(--accent); }
+.plan-card:hover { border-color: var(--primary); }
 .plan-card.is-today {
-  border-color: var(--accent);
+  border-color: var(--primary);
   background: var(--highlight);
 }
 .plan-card-head {
@@ -813,7 +820,7 @@ nav a[aria-current="page"]::after {
   font-size: 13px;
   color: var(--muted);
 }
-.plan-card-meta strong { color: var(--primary); font-family: var(--font-display); font-size: 16px; margin-right: 2px; letter-spacing: -.4px; }
+.plan-card-meta strong { color: var(--primary-hover); font-family: var(--font-display); font-size: 16px; margin-right: 2px; letter-spacing: -.4px; }
 .plan-pills { display: flex; flex-wrap: wrap; gap: 6px; }
 .plan-pill {
   background: var(--canvas);
@@ -833,8 +840,8 @@ nav a[aria-current="page"]::after {
   font-weight: 700;
   letter-spacing: 1.2px;
   text-transform: uppercase;
-  color: var(--primary);
-  background: rgba(29, 75, 53, .10);
+  color: var(--primary-hover);
+  background: rgba(127, 163, 102, .15);
   padding: 3px 8px;
   border-radius: var(--radius-pill);
 }
@@ -882,7 +889,7 @@ nav a[aria-current="page"]::after {
 .session-row .session-end .chip { flex: 0 0 auto; }
 
 /* =========================================================================
-   Muscle map
+   Muscle map — dark adjustments (JS also drives the palette per intensity)
    ========================================================================= */
 .muscle-map {
   background: var(--surface);
@@ -954,7 +961,7 @@ nav a[aria-current="page"]::after {
   font-size: 12px;
   color: var(--ink);
   border-radius: var(--radius-pill);
-  background: var(--canvas);
+  background: var(--surface-2);
   border: 1px solid var(--border);
 }
 .muscle-swatch::before {
@@ -964,37 +971,39 @@ nav a[aria-current="page"]::after {
   border-radius: 3px;
   background: var(--swatch, var(--muted));
   display: inline-block;
-  border: 1px solid rgba(0,0,0,0.06);
+  border: 1px solid rgba(255,255,255,.05);
 }
-.muscle-swatch.no-data    { --swatch: #c5cdbe; }
-.muscle-swatch.low        { --swatch: #cfe1b6; }
-.muscle-swatch.moderate   { --swatch: #6d8d54; }
-.muscle-swatch.high       { --swatch: #d49a3a; }
-.muscle-swatch.very-high  { --swatch: #b84b45; }
+/* Must mirror app.js SCALE exactly */
+.muscle-swatch.no-data    { --swatch: #3a463d; }
+.muscle-swatch.low        { --swatch: #5e754f; }
+.muscle-swatch.moderate   { --swatch: #7fa366; }
+.muscle-swatch.high       { --swatch: #d9a441; }
+.muscle-swatch.very-high  { --swatch: #d9756e; }
 
 /* The body-muscles library renders its own colors. We restyle them here
-   to enforce the green-first scale on the frontend. The library's default
-   uses yellow→orange→red; these selectors win by specificity and override
-   the inline fill the library applies during its refreshPath() pass. */
+   to enforce the dark-theme green-first scale on the frontend. The
+   library's default uses yellow→orange→red; these selectors win by
+   specificity and override the inline fill the library applies during its
+   refreshPath() pass. */
 .body-chart-muscle {
-  fill: var(--mm-no-data, #c5cdbe) !important;
+  fill: #3a463d !important;
   stroke: var(--ink) !important;
-  stroke-opacity: .18 !important;
+  stroke-opacity: .30 !important;
   stroke-width: 0.1 !important;
   transition: fill .2s ease, filter .2s ease;
 }
 .muscle-chart[data-mm-state="loaded"] .body-chart-muscle { cursor: pointer; }
 .body-chart-muscle:hover,
 .body-chart-muscle:focus-visible {
-  filter: brightness(1.06);
+  filter: brightness(1.18) saturate(1.05) !important;
   outline: none;
 }
 .body-chart-muscle.is-selected {
-  stroke: var(--primary) !important;
+  stroke: var(--primary-hover) !important;
   stroke-width: 0.3 !important;
 }
 .body-chart-background path {
-  fill: rgba(29,75,53,0.06) !important;
+  fill: rgba(127, 163, 102, 0.10) !important;
   pointer-events: none;
 }
 .body-chart-container {
@@ -1010,7 +1019,7 @@ nav a[aria-current="page"]::after {
 .muscle-fallback table { font-size: 13px; }
 
 /* =========================================================================
-   Recent food rows on dashboard — compact & file-like
+   Recent food rows on dashboard
    ========================================================================= */
 .food-rows { margin-top: 8px; }
 .food-rows .row {
@@ -1020,21 +1029,252 @@ nav a[aria-current="page"]::after {
   margin: 8px 0;
   background: var(--surface);
 }
-.food-rows .row strong { font-variant-numeric: tabular-nums; color: var(--primary); }
+.food-rows .row strong { font-variant-numeric: tabular-nums; color: var(--primary-hover); }
 .food-rows .row small { color: var(--muted); margin-left: 8px; }
 
 /* =========================================================================
-   Compact action links (secondary actions next to a primary CTA)
+   Subtle link
    ========================================================================= */
 .subtle-link {
   color: var(--muted);
   font-size: 14px;
-  text-decoration-color: rgba(29,75,53,.25);
+  text-decoration-color: rgba(127, 163, 102, .25);
 }
-.subtle-link:hover { color: var(--ink); text-decoration-color: var(--primary); }
+.subtle-link:hover { color: var(--ink); text-decoration-color: var(--primary-hover); }
 
 /* =========================================================================
-   Touch targets & reading comfort (from the original)
+   Food diary (nutrition.html)
+   ========================================================================= */
+
+/* Day summary strip — single line, dense */
+.day-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  padding: 14px 16px;
+  background: var(--highlight);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  margin: 14px 0;
+  font-size: 14px;
+  color: var(--ink);
+}
+.day-strip dt {
+  font-size: 11px;
+  letter-spacing: 1.2px;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin: 0;
+  font-weight: 700;
+}
+.day-strip dd {
+  margin: 0 0 0 6px;
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  color: var(--ink);
+}
+.day-strip > div {
+  display: flex;
+  align-items: baseline;
+  gap: 0;
+}
+.day-strip .target {
+  color: var(--muted);
+  font-weight: 500;
+  margin-left: 4px;
+  font-size: 13px;
+}
+.day-strip .total-pill {
+  margin-left: auto;
+  font-family: var(--font-display);
+  font-size: 18px;
+  font-weight: 700;
+  letter-spacing: -.4px;
+  color: var(--primary-hover);
+}
+
+/* Filter bar — single GET form */
+.filter-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: 10px;
+  padding: 14px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  margin: 12px 0 18px;
+}
+.filter-bar label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0;
+  flex: 1 1 160px;
+  min-width: 140px;
+  font-size: 11px;
+  letter-spacing: 1.2px;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.filter-bar input,
+.filter-bar select {
+  margin: 0;
+  min-height: 44px;
+}
+.filter-bar .filter-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex: 0 0 auto;
+}
+.filter-bar .today-link {
+  font-size: 14px;
+  font-weight: 650;
+  color: var(--ink);
+  text-decoration: none;
+  padding: 11px 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--canvas);
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+}
+.filter-bar .today-link:hover { background: var(--highlight); border-color: var(--primary); }
+
+/* Compact food entry rows */
+.food-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  border-top: 1px solid var(--border);
+}
+.food-row {
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: stretch;
+  gap: 0;
+}
+.food-row .food-checkbox {
+  width: 22px;
+  height: 22px;
+  margin: 17px 10px 17px 14px;
+  flex: 0 0 auto;
+  accent-color: var(--primary);
+  align-self: flex-start;
+}
+.food-row .food-details {
+  flex: 1 1 auto;
+  margin: 0;
+  min-width: 0;
+}
+.food-row .food-summary {
+  display: grid;
+  grid-template-columns: 1fr auto auto auto;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 14px 14px 4px;
+  min-height: 56px;
+  color: var(--ink);
+  list-style: none;
+}
+.food-row .food-summary::-webkit-details-marker { display: none; }
+.food-row .food-name {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  color: var(--ink);
+  text-decoration: none;
+}
+.food-row .food-name strong {
+  font-weight: 600;
+  color: var(--ink);
+  text-decoration: underline;
+  text-underline-offset: 4px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.food-row .food-name small {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 500;
+}
+.food-row .food-macros {
+  font-size: 12px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.food-row .food-kcal {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 15px;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink);
+  white-space: nowrap;
+}
+.food-row .food-chip {
+  flex: 0 0 auto;
+}
+.food-row details[open] .food-summary { background: var(--highlight); }
+.food-row .food-detail {
+  padding: 0 14px 14px;
+  border-top: 1px dashed var(--border);
+  margin-top: 0;
+}
+.food-row .food-detail-inner {
+  padding-top: 12px;
+  display: grid;
+  gap: 10px;
+}
+.food-row .food-detail dl {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: 6px 16px;
+  margin: 0;
+}
+.food-row .food-detail dt {
+  font-size: 11px;
+  letter-spacing: 1.2px;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin: 0;
+  font-weight: 700;
+}
+.food-row .food-detail dd {
+  margin: 0;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink);
+  font-weight: 600;
+}
+.food-row .food-detail .uncertainty {
+  font-size: 13px;
+  color: var(--muted);
+  margin: 0;
+}
+.food-row .food-detail .actions-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+  margin-top: 4px;
+}
+.food-row .food-detail .photo-link {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--primary-hover);
+  text-decoration: none;
+}
+.food-row .food-detail .photo-link:hover { text-decoration: underline; }
+
+/* =========================================================================
+   Touch targets & reading comfort
    ========================================================================= */
 [hidden] { display: none !important; }
 input, select, textarea { font-size: 16px; }
@@ -1045,6 +1285,16 @@ main { min-width: 0; }
 .card summary { padding: 10px 0; min-height: 44px; }
 .errorlist { padding-left: 20px; }
 .helptext { line-height: 1.5; }
+
+/* Native dark scrollbars on Chromium / WebKit */
+::-webkit-scrollbar { width: 12px; height: 12px; }
+::-webkit-scrollbar-track { background: var(--canvas); }
+::-webkit-scrollbar-thumb {
+  background: var(--surface-2);
+  border: 3px solid var(--canvas);
+  border-radius: 999px;
+}
+::-webkit-scrollbar-thumb:hover { background: var(--border); }
 
 @media (max-width: 720px) {
   header { padding: 18px; gap: 12px; }
@@ -1060,6 +1310,14 @@ main { min-width: 0; }
   .timer { position: static; }
   .form-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   nav a { font-size: 11px; }
+  .food-row .food-summary {
+    grid-template-columns: 1fr auto auto auto;
+    padding: 12px 12px 12px 4px;
+    gap: 8px;
+  }
+  .food-row .food-macros { display: none; }
+  .food-row .food-chip { font-size: 10px; }
+  .food-row .food-chip .chip { padding: 2px 8px; font-size: 10px; }
 }
 
 @media (max-width: 380px) {
@@ -1074,6 +1332,7 @@ main { min-width: 0; }
   .action-form > button { width: 100%; text-align: center; }
   nav a { font-size: 10.5px; padding: 4px 6px; }
   nav a svg { width: 20px; height: 20px; }
+  .food-row .food-summary { padding: 12px 10px; }
 }
 
 @media (prefers-reduced-motion: reduce) {

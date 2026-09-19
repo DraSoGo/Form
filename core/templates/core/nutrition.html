@@ -1,1 +1,196 @@
-{% extends "core/base.html" %}{% block content %}<p class="eyebrow">NOURISH</p><h1>Food diary</h1><div class="actions"><a class="button" href="/nutrition/new/">+ Log food / photo</a><a href="/targets/">Nutrition targets</a><a href="/add/library/">+ Saved food</a></div><section class="card"><h2>Today</h2><p>{{ totals.calories|floatformat:0 }} kcal · {{ totals.protein|floatformat:0 }} g protein · {{ totals.carbs|floatformat:0 }} g carbs · {{ totals.fat|floatformat:0 }} g fat · {{ totals.fiber|floatformat:0 }} g fiber</p></section><h2>Entries</h2><form method="post" action="/templates/save/">{% csrf_token %}{% for f in foods %}<article class="card"><label class="inline"><input type="checkbox" name="food_ids" value="{{ f.pk }}"> Select for meal template</label><h3><a href="/nutrition/{{ f.pk }}/">{{ f.name }} · {{ f.quantity }}</a></h3><p>{{ f.recorded_at }} · {{ f.get_state_display }}</p><p>{{ f.calories }} kcal · P {{ f.protein }} · C {{ f.carbs }} · F {{ f.fat }} · Fiber {{ f.fiber }}</p><p>{{ f.uncertainty }}</p>{% if f.image %}<a href="/nutrition/{{ f.pk }}/">View photo and analysis</a>{% else %}<small>Image: {{ f.image_status }}</small>{% endif %}</article>{% empty %}<p>No meals yet. Log something nourishing.</p>{% endfor %}<label>Meal template name<input name="name" maxlength="160"></label><button>Save selected as template</button></form><div class="grid"><section class="card"><h2>Personal food library</h2>{% for item in library %}<div class="row"><a href="/edit/library/{{ item.pk }}/">{{ item.name }} · {{ item.quantity }}</a><div class="actions"><form method="post" action="/library/{{ item.pk }}/use/">{% csrf_token %}<button>Log</button></form><form method="post" action="/delete/library/{{ item.pk }}/">{% csrf_token %}<button class="secondary">Delete</button></form></div></div>{% endfor %}</section><section class="card"><h2>Meal templates</h2>{% for item in templates %}<div class="row"><form method="post" action="/templates/{{ item.pk }}/use/">{% csrf_token %}<p>{{ item.name }}</p><button>Log meal</button></form><form method="post" action="/delete/template/{{ item.pk }}/">{% csrf_token %}<button class="secondary">Delete</button></form></div>{% endfor %}</section></div>{% endblock %}
+{% extends "core/base.html" %}
+{% block title %}Food diary · Form{% endblock %}
+
+{% block content %}
+
+<p class="eyebrow">Nourish</p>
+<h1>Food diary</h1>
+
+{# ── Page head: log food is the primary action ─────────────────────── #}
+<div class="actions">
+  <a class="button" href="/nutrition/new/">+ Log food / photo</a>
+  <a class="subtle-link" href="/targets/">Nutrition targets</a>
+  <a class="subtle-link" href="/add/library/">+ Saved food</a>
+</div>
+
+{# ── Day summary strip — compact, one line of totals + targets ─────── #}
+<dl class="day-strip" aria-label="Day totals">
+  <div>
+    <dt>Calories</dt>
+    <dd>{{ totals.calories|floatformat:0 }}<span class="target">/ {% if target %}{{ target.calories|floatformat:0 }}{% else %}—{% endif %} kcal</span></dd>
+  </div>
+  <div>
+    <dt>Protein</dt>
+    <dd>{{ totals.protein|floatformat:0 }}<span class="target">/ {% if target %}{{ target.protein|floatformat:0 }}{% else %}—{% endif %} g</span></dd>
+  </div>
+  <div>
+    <dt>Carbs</dt>
+    <dd>{{ totals.carbs|floatformat:0 }}<span class="target">/ {% if target %}{{ target.carbs|floatformat:0 }}{% else %}—{% endif %} g</span></dd>
+  </div>
+  <div>
+    <dt>Fat</dt>
+    <dd>{{ totals.fat|floatformat:0 }}<span class="target">/ {% if target %}{{ target.fat|floatformat:0 }}{% else %}—{% endif %} g</span></dd>
+  </div>
+  <div>
+    <dt>Fiber</dt>
+    <dd>{{ totals.fiber|floatformat:0 }}<span class="target">/ {% if target %}{{ target.fiber|floatformat:0 }}{% else %}—{% endif %} g</span></dd>
+  </div>
+  <span class="total-pill">{{ selected_date|date:"D j M" }}</span>
+</dl>
+
+{# ── Filters — GET form, no JS required ────────────────────────────── #}
+<form class="filter-bar" method="get" action="/nutrition/">
+  <a class="today-link" href="/nutrition/?date=today" aria-label="Jump to today">Today</a>
+  <label for="filter-date">
+    Date
+    <input id="filter-date" type="date" name="date"
+           value="{{ selected_date|date:'Y-m-d' }}">
+  </label>
+  <label for="filter-status">
+    Status
+    <select id="filter-status" name="status">
+      <option value="">All statuses</option>
+      {% for value, label in state_choices %}
+        <option value="{{ value }}" {% if value == active_status %}selected{% endif %}>{{ label }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <div class="filter-actions">
+    <button type="submit">Apply</button>
+  </div>
+</form>
+
+{# ── Entries as compact rows inside an expandable form for bulk save ─ #}
+<h2>Entries</h2>
+
+<form method="post" action="/templates/save/">
+  {% csrf_token %}
+
+  {% if foods %}
+    <ul class="food-list">
+      {% for f in foods %}
+        <li class="food-row">
+          <input class="food-checkbox" type="checkbox"
+                 name="food_ids" value="{{ f.pk }}"
+                 aria-label="Select {{ f.name }} for meal template">
+
+          <details class="food-details">
+            <summary class="food-summary">
+              <a class="food-name" href="/nutrition/{{ f.pk }}/">
+                <strong>{{ f.name }}{% if f.quantity %} · {{ f.quantity }}{% endif %}</strong>
+                <small>{{ f.recorded_at|date:"M j, H:i" }}</small>
+              </a>
+
+              <span class="food-macros">P {{ f.protein }} · C {{ f.carbs }} · F {{ f.fat }}</span>
+
+              <span class="food-kcal">{{ f.calories }} kcal</span>
+
+              <span class="food-chip">
+                {% if f.state == "manual" %}<span class="chip planned">Manual</span>
+                {% elif f.state == "ai_estimated" %}<span class="chip awaiting">AI estimated</span>
+                {% elif f.state == "user_corrected" %}<span class="chip in-progress">User corrected</span>
+                {% elif f.state == "confirmed" %}<span class="chip completed">Confirmed</span>
+                {% else %}<span class="chip planned">{{ f.get_state_display }}</span>{% endif %}
+              </span>
+            </summary>
+
+            <div class="food-detail">
+              <div class="food-detail-inner">
+                {% if f.note %}<p class="muted" style="margin:0">{{ f.note }}</p>{% endif %}
+
+                <dl>
+                  <div><dt>Calories</dt><dd>{{ f.calories }} kcal</dd></div>
+                  <div><dt>Protein</dt><dd>{{ f.protein }} g</dd></div>
+                  <div><dt>Carbs</dt><dd>{{ f.carbs }} g</dd></div>
+                  <div><dt>Fat</dt><dd>{{ f.fat }} g</dd></div>
+                  <div><dt>Fiber</dt><dd>{{ f.fiber }} g</dd></div>
+                  {% if f.sugar %}<div><dt>Sugar</dt><dd>{{ f.sugar }} g</dd></div>{% endif %}
+                  {% if f.sodium %}<div><dt>Sodium</dt><dd>{{ f.sodium }} mg</dd></div>{% endif %}
+                </dl>
+
+                {% if f.uncertainty %}<p class="uncertainty">{{ f.uncertainty }}</p>{% endif %}
+
+                {% if f.image %}
+                  <p style="margin:0">
+                    <a class="photo-link" href="/nutrition/{{ f.pk }}/">View photo and analysis</a>
+                  </p>
+                {% else %}
+                  <p class="muted" style="font-size:13px;margin:0">Image: {{ f.image_status }}</p>
+                {% endif %}
+
+                <div class="actions-row">
+                  <a class="button secondary" href="/nutrition/{{ f.pk }}/">Edit</a>
+                  <form method="post" action="/delete/food/{{ f.pk }}/" style="margin:0">
+                    {% csrf_token %}
+                    <button class="secondary" type="submit"
+                            onclick="return confirm('Delete this entry?')">Delete</button>
+                  </form>
+                </div>
+              </div>
+            </div>
+          </details>
+        </li>
+      {% endfor %}
+    </ul>
+  {% else %}
+    <p class="muted">No meals logged for this day.</p>
+    <div class="actions">
+      <a class="button" href="/nutrition/new/">+ Log food / photo</a>
+    </div>
+  {% endif %}
+
+  {# Template-save form only renders when entries exist #}
+  {% if foods %}
+    <div class="actions" style="margin-top:14px;flex-wrap:wrap;align-items:end;gap:12px">
+      <label for="template-name" style="margin:0;flex:1 1 220px">
+        Meal template name
+        <input id="template-name" name="name" maxlength="160" placeholder="e.g. Post-workout shake">
+      </label>
+      <button type="submit">Save selected as template</button>
+    </div>
+  {% endif %}
+</form>
+
+{# ── Personal food library ───────────────────────────────────────────── #}
+<details class="card" style="margin-top:18px">
+  <summary>Personal food library</summary>
+  {% for item in library %}
+    <div class="row">
+      <a href="/edit/library/{{ item.pk }}/">{{ item.name }} · {{ item.quantity }}</a>
+      <div class="actions">
+        <form method="post" action="/library/{{ item.pk }}/use/" style="margin:0">
+          {% csrf_token %}<button>Log</button>
+        </form>
+        <form method="post" action="/delete/library/{{ item.pk }}/" style="margin:0">
+          {% csrf_token %}<button class="secondary">Delete</button>
+        </form>
+      </div>
+    </div>
+  {% empty %}
+    <p class="muted">Saved foods you log will appear here.</p>
+  {% endfor %}
+</details>
+
+{# ── Meal templates ─────────────────────────────────────────────────── #}
+<details class="card">
+  <summary>Meal templates</summary>
+  {% for item in templates %}
+    <div class="row">
+      <form method="post" action="/templates/{{ item.pk }}/use/" style="margin:0;flex:1">
+        {% csrf_token %}<p style="margin:0">{{ item.name }}</p>
+      </form>
+      <div class="actions">
+        <form method="post" action="/templates/{{ item.pk }}/use/" style="margin:0">
+          {% csrf_token %}<button>Log meal</button>
+        </form>
+        <form method="post" action="/delete/template/{{ item.pk }}/" style="margin:0">
+          {% csrf_token %}<button class="secondary">Delete</button>
+        </form>
+      </div>
+    </div>
+  {% empty %}
+    <p class="muted">Save a meal template from the entries above to log it again in one click.</p>
+  {% endfor %}
+</details>
+
+{% endblock %}

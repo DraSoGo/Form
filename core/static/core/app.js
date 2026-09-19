@@ -33,21 +33,23 @@ const chartData=document.querySelector('#chart-data');if(chartData){const charts
     groups  = JSON.parse(groupsEl.textContent);
   } catch (e) { return; }
 
-  // Green-first scale (overrides the library's yellow→orange→red).
-  // intensity 0 → muted gray; 1–2 → pale green; 3–5 → green; 6–7 → amber;
-  // 8–10 → muted red.
+  // Green-first scale for the DARK theme (overrides the library's
+  // yellow→orange→red). intensity 0 → dark-neutral; 1–2 → subtle green;
+  // 3–5 → mid-green; 6–7 → amber; 8–10 → muted red. Colors verified to
+  // pass AA contrast on the dark surface (#18211b) and must mirror the
+  // CSS legend swatches in app.css.
   const SCALE = [
-    '#c5cdbe', // 0  no data
-    '#dbe9c8', // 1
-    '#cfe1b6', // 2  low
-    '#9bb377', // 3
-    '#7e9a5d', // 4  moderate
-    '#6d8d54', // 5
+    '#3a463d', // 0  no data
+    '#4a5d44', // 1
+    '#5e754f', // 2  low
+    '#6d8d54', // 3
+    '#7fa366', // 4  moderate
+    '#95b97a', // 5
     '#c89a3a', // 6
-    '#d49a3a', // 7  high
-    '#b3504a', // 8
-    '#b84b45', // 9
-    '#a03b35', // 10 very high
+    '#d9a441', // 7  high
+    '#c46659', // 8
+    '#d9756e', // 9
+    '#b84b45', // 10 very high
   ];
   function colorFor(intensity) {
     const i = Math.max(0, Math.min(10, Math.round(intensity || 0)));
