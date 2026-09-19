@@ -38,19 +38,18 @@ const chartData=document.querySelector('#chart-data');if(chartData){const charts
   // 3–5 → mid-green; 6–7 → amber; 8–10 → muted red. Colors verified to
   // pass AA contrast on the dark surface (#18211b) and must mirror the
   // CSS legend swatches in app.css.
-  // Blue → red intensity ramp: cool blues read clearly against the dark
-  // surface, and heat rises toward red. Must mirror the CSS legend
-  // swatches in app.css.
+  // Green → red intensity ramp: brand greens at low load, rising heat to
+  // red. Must mirror the CSS legend swatches in app.css.
   const SCALE = [
     '#3a463d', // 0  no data
-    '#4a7fb5', // 1
-    '#5b8fc4', // 2  low
-    '#6fa0d0', // 3
-    '#84b1dc', // 4  moderate
-    '#9bc2e6', // 5
-    '#e0b23e', // 6
-    '#e3a233', // 7  high
-    '#d97f56', // 8
+    '#4a6b3c', // 1
+    '#5d8a4e', // 2  low
+    '#74a55f', // 3
+    '#8bbf6e', // 4  moderate
+    '#a3d47e', // 5
+    '#d9b23e', // 6
+    '#e0a233', // 7  high
+    '#d98356', // 8
     '#d96a4e', // 9
     '#c94b40', // 10 very high
   ];

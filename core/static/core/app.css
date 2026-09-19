@@ -998,9 +998,9 @@ nav a[aria-current="page"]::after {
 }
 /* Must mirror app.js SCALE exactly */
 .muscle-swatch.no-data    { --swatch: #3a463d; }
-.muscle-swatch.low        { --swatch: #5b8fc4; }
-.muscle-swatch.moderate   { --swatch: #84b1dc; }
-.muscle-swatch.high       { --swatch: #e0b23e; }
+.muscle-swatch.low        { --swatch: #5d8a4e; }
+.muscle-swatch.moderate   { --swatch: #8bbf6e; }
+.muscle-swatch.high       { --swatch: #d9b23e; }
 .muscle-swatch.very-high  { --swatch: #d96a4e; }
 
 /* The body-muscles library renders its own colors. We restyle them here
