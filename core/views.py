@@ -559,6 +559,176 @@ def plan_edit(request):
     )
 
 
+def plan_day(request, day_name):
+    """Per-day plan page: view, add, and remove exercises for one workout day."""
+    plan = active_plan(request.user)
+    if not plan:
+        raise Http404
+
+    if plan.schedule_type == "fixed":
+        valid_days = []
+        seen = set()
+        for weekday in range(7):
+            name = plan.schedule.get(str(weekday))
+            if name and name != "Rest" and name not in seen:
+                valid_days.append(name)
+                seen.add(name)
+    else:
+        valid_days = [name for name in plan.schedule if name != "Rest"]
+
+    if day_name not in valid_days:
+        raise Http404
+
+    today = timezone.localdate()
+    if plan.schedule_type == "fixed":
+        scheduled = plan.schedule.get(str(today.weekday()), "Rest")
+    else:
+        completed = WorkoutSession.objects.filter(
+            user=request.user, plan=plan, finished_at__isnull=False
+        ).count()
+        scheduled = plan.schedule[completed % len(plan.schedule)]
+    is_today = day_name == scheduled
+
+    single_day = len(valid_days) == 1
+    if single_day:
+        items = [
+            (i, item) for i, item in enumerate(plan.exercises)
+            if item.get("day", day_name) == day_name
+        ]
+    else:
+        items = [
+            (i, item) for i, item in enumerate(plan.exercises)
+            if item.get("day") == day_name
+        ]
+
+    exercise_ids = {str(item.get("exercise")) for _, item in items if item.get("exercise")}
+    exercises_by_pk = {
+        str(ex.pk): ex
+        for ex in Exercise.objects.filter(user=request.user, pk__in=exercise_ids)
+    }
+
+    day_exercises = []
+    for index, item in sorted(items, key=lambda x: (x[1].get("order", 1), x[0])):
+        pk = str(item.get("exercise")) if item.get("exercise") else None
+        exercise = exercises_by_pk.get(pk) if pk else None
+        day_exercises.append(
+            {
+                "index": index,
+                "name": exercise.name if exercise else None,
+                "exercise_pk": pk,
+                "activity_type": exercise.activity_type if exercise else None,
+                "sets": item.get("sets"),
+                "rep_min": item.get("rep_min"),
+                "rep_max": item.get("rep_max"),
+                "rest": item.get("rest"),
+                "rir": item.get("rir"),
+                "rpe": item.get("rpe"),
+                "minutes": item.get("minutes"),
+                "notes": item.get("notes", ""),
+                "missing": exercise is None and pk is not None,
+            }
+        )
+
+    form_errors = ""
+    if request.method == "POST":
+        action = request.POST.get("action")
+        exercises = list(plan.exercises)
+        try:
+            if action == "add":
+                exercise_pk = request.POST.get("exercise")
+                exercise = Exercise.objects.get(pk=exercise_pk, user=request.user)
+                if exercise.archived:
+                    raise ValidationError("Archived exercises cannot be added to a new plan")
+
+                day_orders = [
+                    item.get("order", 1)
+                    for item in exercises
+                    if item.get("day") == day_name
+                ]
+                order = max(day_orders) + 1 if day_orders else 1
+                notes = request.POST.get("notes", "")
+
+                if exercise.activity_type == "cardio":
+                    minutes = int(request.POST.get("minutes", 20))
+                    new_item = {
+                        "exercise": str(exercise.pk),
+                        "day": day_name,
+                        "order": order,
+                        "minutes": minutes,
+                        "notes": notes,
+                    }
+                else:
+                    sets = int(request.POST.get("sets", 3))
+                    rep_min = int(request.POST.get("rep_min", 8))
+                    rep_max = int(request.POST.get("rep_max", 12))
+                    rest = int(request.POST.get("rest", 90))
+                    new_item = {
+                        "exercise": str(exercise.pk),
+                        "day": day_name,
+                        "order": order,
+                        "sets": sets,
+                        "rep_min": rep_min,
+                        "rep_max": rep_max,
+                        "rest": rest,
+                        "notes": notes,
+                    }
+                    rir = request.POST.get("rir")
+                    rpe = request.POST.get("rpe")
+                    if rir:
+                        new_item["rir"] = float(rir)
+                    if rpe:
+                        new_item["rpe"] = float(rpe)
+
+                exercises.append(new_item)
+                create_plan(
+                    request.user,
+                    {
+                        "name": plan.name,
+                        "schedule_type": plan.schedule_type,
+                        "schedule": plan.schedule,
+                        "exercises": exercises,
+                    },
+                    reason=f"Added to {day_name}",
+                    expected_version=plan.version,
+                )
+                return redirect(f"/workouts/day/{day_name}/")
+
+            if action == "remove":
+                index = int(request.POST.get("index", ""))
+                if not (0 <= index < len(exercises)):
+                    raise ValidationError("Invalid exercise index")
+                exercises.pop(index)
+                create_plan(
+                    request.user,
+                    {
+                        "name": plan.name,
+                        "schedule_type": plan.schedule_type,
+                        "schedule": plan.schedule,
+                        "exercises": exercises,
+                    },
+                    reason=f"Removed from {day_name}",
+                    expected_version=plan.version,
+                )
+                return redirect(f"/workouts/day/{day_name}/")
+
+            form_errors = "Unknown action."
+        except (Exercise.DoesNotExist, ValueError, ValidationError) as exc:
+            form_errors = str(exc)
+
+    return render(
+        request,
+        "core/day_detail.html",
+        {
+            "day_name": day_name,
+            "is_today": is_today,
+            "day_exercises": day_exercises,
+            "library": Exercise.objects.filter(user=request.user, archived=False).order_by("name"),
+            "plan": plan,
+            "form_errors": form_errors,
+        },
+    )
+
+
 @require_POST
 def session_start(request):
     plan = active_plan(request.user)

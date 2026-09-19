@@ -869,6 +869,87 @@ nav a[aria-current="page"]::after {
   border-radius: var(--radius-pill);
 }
 
+/* Plan-card name now links to the day page; keep visual weight, no underline */
+.plan-card-name-link {
+  color: var(--ink);
+  text-decoration: none;
+}
+.plan-card-name-link:hover {
+  color: var(--primary-hover);
+  text-decoration: none;
+}
+
+/* =========================================================================
+   Day detail page (day_detail.html)
+   ========================================================================= */
+
+/* h1 row that wraps the day-name link + Today chip */
+.day-name-link {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin: 0 0 18px;
+}
+.day-name-anchor {
+  color: var(--ink);
+  text-decoration: none;
+}
+.day-name-anchor:hover {
+  color: var(--primary-hover);
+  text-decoration: none;
+}
+
+/* Exercise list — compact rows, mobile-first */
+.day-exercises {
+  list-style: none;
+  padding: 0;
+  margin: 0 0 18px;
+  border-top: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+}
+.day-exercise {
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 14px;
+  min-width: 0;
+}
+.day-exercise-info {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+.day-exercise-name {
+  font-weight: 700;
+  font-size: 15px;
+  color: var(--ink);
+}
+.day-exercise-meta {
+  color: var(--muted);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+.day-exercise-notes {
+  font-size: 13px;
+  margin-top: 2px;
+}
+.day-exercise-remove {
+  margin: 0;
+  flex: 0 0 auto;
+}
+.day-exercise-remove .secondary { min-height: 40px; padding: 8px 14px; }
+
+@media (max-width: 480px) {
+  .day-exercise { flex-wrap: wrap; }
+  .day-exercise-remove { width: 100%; }
+  .day-exercise-remove .secondary { width: 100%; }
+}
+
 /* =========================================================================
    Exercise library — grouped lists + search
    ========================================================================= */

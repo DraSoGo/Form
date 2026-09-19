@@ -179,7 +179,10 @@ class CoreFlowTests(TestCase):
         library = self.client.get('/workouts/')
         self.assertContains(library, '<span class="exercise-name">Walk</span>', html=True)
         self.assertContains(library, '<small class="exercise-meta">Cardio · 30 min · No equipment</small>', html=True)
-        self.assertContains(self.client.get('/workouts/plan/'), 'data-default-minutes="30"')
+        # The cardio default duration surfaces on the day page's add form.
+        from .services import create_plan
+        create_plan(self.user, self.plan_data())
+        self.assertContains(self.client.get('/workouts/day/Push/'), 'data-default-minutes="30"')
 
     def test_strength_exercise_does_not_keep_cardio_duration(self):
         form = ExerciseForm(data={'name': 'Squat', 'activity_type': 'strength',
@@ -636,3 +639,88 @@ class CoreFlowTests(TestCase):
         self.assertEqual(latest['weight'], second.weight)
         self.assertEqual(latest['body_fat'], second.body_fat)
         self.assertEqual(latest['source'], second.source)
+
+    def test_plan_day_shows_exercises_and_today(self):
+        plan = create_plan(self.user, self.plan_data(schedule=['Push', 'Pull', 'Rest']))
+        response = self.client.get('/workouts/day/Push/')
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.context['day_name'], 'Push')
+        self.assertTrue(response.context['is_today'])
+        exercises = response.context['day_exercises']
+        self.assertEqual(len(exercises), 1)
+        self.assertEqual(exercises[0]['name'], 'Bench press')
+        self.assertEqual(response.context['plan'], plan)
+
+        self.assertEqual(self.client.get('/workouts/day/Nope/').status_code, 404)
+
+    def test_plan_day_add_and_remove_exercise(self):
+        plan = create_plan(self.user, self.plan_data(schedule=['Push', 'Rest']))
+        squat = Exercise.objects.create(user=self.user, name='Squat', primary_muscles=['Quads'])
+        response = self.client.post('/workouts/day/Push/', {
+            'action': 'add',
+            'exercise': str(squat.pk),
+            'sets': '3',
+            'rep_min': '8',
+            'rep_max': '12',
+            'rest': '90',
+        })
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(WorkoutPlan.objects.count(), 2)
+        latest = WorkoutPlan.objects.first()
+        self.assertEqual(len(latest.exercises), 2)
+        added = latest.exercises[1]
+        self.assertEqual(added['exercise'], str(squat.pk))
+        self.assertEqual(added['sets'], 3)
+
+        response = self.client.post('/workouts/day/Push/', {
+            'action': 'remove',
+            'index': '1',
+        })
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(WorkoutPlan.objects.count(), 3)
+        latest = WorkoutPlan.objects.first()
+        self.assertEqual(len(latest.exercises), 1)
+
+        plan.refresh_from_db()
+        self.assertEqual(len(plan.exercises), 1)
+
+    def test_plan_day_add_validates_via_create_plan(self):
+        create_plan(self.user, self.plan_data(schedule=['Push', 'Rest']))
+        other = get_user_model().objects.create_user('other')
+        foreign = Exercise.objects.create(user=other, name='Foreign', primary_muscles=['Back'])
+        response = self.client.post('/workouts/day/Push/', {
+            'action': 'add',
+            'exercise': str(foreign.pk),
+            'sets': '3',
+            'rep_min': '8',
+            'rep_max': '12',
+            'rest': '90',
+        })
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(WorkoutPlan.objects.count(), 1)
+
+        response = self.client.post('/workouts/day/Push/', {
+            'action': 'add',
+            'exercise': str(self.exercise.pk),
+            'sets': '0',
+            'rep_min': '8',
+            'rep_max': '12',
+            'rest': '90',
+        })
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(WorkoutPlan.objects.count(), 1)
+
+    def test_plan_edit_preserves_exercises(self):
+        import json
+        plan = create_plan(self.user, self.plan_data(schedule=['Push', 'Rest']))
+        response = self.client.post('/workouts/plan/', {
+            'name': plan.name,
+            'schedule_type': plan.schedule_type,
+            'schedule': json.dumps(plan.schedule),
+            'exercises': json.dumps(plan.exercises),
+            'version': str(plan.version),
+        })
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(WorkoutPlan.objects.count(), 2)
+        latest = WorkoutPlan.objects.first()
+        self.assertEqual(latest.exercises, plan.exercises)
