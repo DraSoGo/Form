@@ -701,6 +701,58 @@ def trends(request):
                     "pr": max(s["weight"] for s in entries),
                 }
             )
+    # Summary cards
+    workout_count = WorkoutSession.objects.filter(
+        user=request.user, started_at__gte=start
+    ).count()
+    workout_sub = (
+        f"{round(workout_count / days * 7, 1)} per week"
+        if workout_count else "No sessions in this period"
+    )
+
+    logged_days = [d for d in daily if d["calories"] > 0]
+    if logged_days:
+        avg_calories = int(round(sum(d["calories"] for d in logged_days) / len(logged_days)))
+        calories_value = f"{avg_calories} kcal"
+        calories_sub = f"{len(logged_days)} of {days} days logged"
+    else:
+        calories_value = "—"
+        calories_sub = "No food logged"
+
+    sleep_points = groups.get("Sleep", [])
+    if sleep_points:
+        avg_sleep = round(sum(p["value"] for p in sleep_points) / len(sleep_points), 1)
+        sleep_value = f"{avg_sleep} h"
+        sleep_sub = f"{len(sleep_points)} nights recorded"
+    else:
+        sleep_value = "—"
+        sleep_sub = "0 nights recorded"
+
+    weigh_ins = list(
+        BodyMeasurement.objects.filter(
+            user=request.user, recorded_at__gte=start, weight__isnull=False
+        ).order_by("recorded_at")
+    )
+    if len(weigh_ins) >= 2:
+        change = float(weigh_ins[-1].weight) - float(weigh_ins[0].weight)
+        if change > 0:
+            weight_value = f"+{change:.1f} kg"
+        elif change < 0:
+            weight_value = f"{change:.1f} kg"
+        else:
+            weight_value = "0.0 kg"
+        weight_sub = f"{len(weigh_ins)} weigh-ins"
+    else:
+        weight_value = "—"
+        weight_sub = "Add weigh-ins to see change"
+
+    summaries = [
+        {"label": "Workouts", "value": workout_count, "sub": workout_sub},
+        {"label": "Avg calories", "value": calories_value, "sub": calories_sub},
+        {"label": "Avg sleep", "value": sleep_value, "sub": sleep_sub},
+        {"label": "Weight change", "value": weight_value, "sub": weight_sub},
+    ]
+
     return render(
         request,
         "core/trends.html",
@@ -709,6 +761,7 @@ def trends(request):
             "charts": groups,
             "performance": performance,
             "volume": weekly_volume(request.user),
+            "summaries": summaries,
         },
     )
 

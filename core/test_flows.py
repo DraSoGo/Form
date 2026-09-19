@@ -15,8 +15,8 @@ from django.utils import timezone
 
 from .models import (
     BodyMeasurement, Equipment, Exercise, FoodEntry, FoodLibrary, LoginAttempt,
-    MealTemplate, NutritionTarget, Profile, StepEntry, WorkoutCardio, WorkoutPlan,
-    WorkoutSession, WorkoutSet,
+    MealTemplate, NutritionTarget, Profile, SleepEntry, StepEntry, WorkoutCardio,
+    WorkoutPlan, WorkoutSession, WorkoutSet,
 )
 from .forms import ExerciseForm, StepForm
 from .services import (
@@ -448,6 +448,48 @@ class CoreFlowTests(TestCase):
             html=True,
         )
         self.assertContains(response, '<a class="button" href="/coach/">Open coach</a>', html=False)
+
+    def test_trends_summary_cards(self):
+        now = timezone.now()
+        WorkoutSession.objects.create(user=self.user, name='A', started_at=now - timedelta(days=2))
+        WorkoutSession.objects.create(user=self.user, name='B', started_at=now - timedelta(days=1), finished_at=now)
+        FoodEntry.objects.create(user=self.user, name='M1', calories=1000, recorded_at=now - timedelta(days=5))
+        FoodEntry.objects.create(user=self.user, name='M2', calories=1500, recorded_at=now - timedelta(days=3))
+        FoodEntry.objects.create(user=self.user, name='M3', calories=2000, recorded_at=now - timedelta(days=1))
+        SleepEntry.objects.create(user=self.user, date=(now - timedelta(days=2)).date(), hours=Decimal('7'))
+        SleepEntry.objects.create(user=self.user, date=(now - timedelta(days=1)).date(), hours=Decimal('8'))
+        BodyMeasurement.objects.create(user=self.user, weight=70, recorded_at=now - timedelta(days=4))
+        BodyMeasurement.objects.create(user=self.user, weight=71, recorded_at=now - timedelta(days=2))
+        BodyMeasurement.objects.create(user=self.user, weight=72, recorded_at=now - timedelta(days=1))
+
+        response = self.client.get('/trends/?days=7')
+        self.assertEqual(response.status_code, 200)
+        summaries = response.context['summaries']
+        self.assertEqual(len(summaries), 4)
+        self.assertEqual([s['label'] for s in summaries], ['Workouts', 'Avg calories', 'Avg sleep', 'Weight change'])
+        self.assertEqual(summaries[0]['value'], 2)
+        self.assertEqual(summaries[0]['sub'], '2.0 per week')
+        self.assertEqual(summaries[1]['value'], '1500 kcal')
+        self.assertEqual(summaries[1]['sub'], '3 of 7 days logged')
+        self.assertEqual(summaries[2]['value'], '7.5 h')
+        self.assertEqual(summaries[2]['sub'], '2 nights recorded')
+        self.assertEqual(summaries[3]['value'], '+2.0 kg')
+        self.assertEqual(summaries[3]['sub'], '3 weigh-ins')
+
+        empty = get_user_model().objects.create_user('empty')
+        self.client.force_login(empty)
+        response = self.client.get('/trends/?days=7')
+        self.assertEqual(response.status_code, 200)
+        summaries = response.context['summaries']
+        self.assertEqual(len(summaries), 4)
+        self.assertEqual(summaries[0]['value'], 0)
+        self.assertEqual(summaries[0]['sub'], 'No sessions in this period')
+        self.assertEqual(summaries[1]['value'], '—')
+        self.assertEqual(summaries[1]['sub'], 'No food logged')
+        self.assertEqual(summaries[2]['value'], '—')
+        self.assertEqual(summaries[2]['sub'], '0 nights recorded')
+        self.assertEqual(summaries[3]['value'], '—')
+        self.assertEqual(summaries[3]['sub'], 'Add weigh-ins to see change')
 
     def test_nutrition_defaults_to_today_and_filters_by_date(self):
         yesterday = timezone.localdate() - timedelta(days=1)
