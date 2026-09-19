@@ -118,7 +118,11 @@ def run_job(job):
         if job.task=='exercise':
             exercise=m.Exercise.objects.get(pk=job.payload['exercise'],user=job.user)
             context={'exercise':{'name':exercise.name,'activity_type':exercise.activity_type,'equipment':exercise.equipment}}
-            prompt='Fill conventional exercise aliases and muscle metadata. Classify the movement as compound or isolation.'
+            # Constrain muscle names to the canonical groups the muscle map
+            # understands, so AI-filled metadata lights up on the map.
+            from core.muscles import MUSCLES
+            prompt=('Fill conventional exercise aliases and muscle metadata. Classify the movement as compound or isolation. '
+                    'Use only these muscle group names for primary_muscles and secondary_muscles: '+', '.join(MUSCLES)+'.')
         result,provider,model=route(job.task,context,prompt,image,job=job)
         with transaction.atomic():
             # Serialize version allocation and acceptance through the same user row.

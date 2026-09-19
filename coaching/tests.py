@@ -178,6 +178,21 @@ class CoachingTests(TestCase):
         self.assertEqual(exercise.aliases,[])
         self.assertEqual(exercise.primary_muscles,['Shoulders'])
 
+    def test_exercise_prompt_constrains_muscles_to_map_vocabulary(self):
+        # The prompt must enumerate the canonical muscle groups so AI-filled
+        # metadata always maps onto the muscle map.
+        from core.muscles import MUSCLES, normalize
+        with patch('coaching.services.route') as mock:
+            mock.return_value=({'aliases':[],'primary_muscles':['chest'],'secondary_muscles':[],'classification':'compound'},'gpt','test')
+            exercise=Exercise.objects.create(user=self.user,name='Bench press')
+            run_job(enqueue_exercise(self.user,exercise))
+        prompt=mock.call_args[0][2]
+        for muscle in MUSCLES:
+            self.assertIn(muscle,prompt)
+        # Every canonical name must resolve through the normalizer.
+        for muscle in MUSCLES:
+            self.assertEqual(normalize(muscle),muscle)
+
 class AdapterTests(SimpleTestCase):
     def test_nutrition_range_validation(self):
         with self.assertRaises(SchemaError): NutritionEstimate.model_validate({**FOOD,'calories_low':500})
