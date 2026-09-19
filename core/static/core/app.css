@@ -620,12 +620,17 @@ nav a[aria-current="page"]::after {
 
 @media (min-width: 900px) {
   nav {
-    position: static;
-    background: none;
-    border: 0;
-    box-shadow: none;
-    padding: 0;
-    margin-left: auto;
+    /* Keep the bottom bar on every screen size, but constrain it to the
+       content width instead of spanning the full viewport. left/right 0 +
+       margin auto centers it without 100vw scrollbar-offset issues. */
+    left: 0;
+    right: 0;
+    margin: 0 auto;
+    width: min(1160px, calc(100vw - 48px));
+    border: 1px solid var(--border);
+    border-radius: 18px;
+    box-shadow: 0 -10px 24px -16px rgba(0, 0, 0, .55);
+    padding: 8px 12px;
     gap: 4px;
   }
   nav a {
@@ -633,10 +638,11 @@ nav a[aria-current="page"]::after {
     gap: 8px;
     padding: 8px 14px;
     font-size: 14px;
+    border-radius: 12px;
   }
   nav a svg { width: 18px; height: 18px; }
   nav a[aria-current="page"]::after { display: none; }
-  main { padding-bottom: 40px; }
+  main { padding-bottom: 110px; }
 }
 
 /* =========================================================================
