@@ -420,7 +420,12 @@ def photo_delete(request, pk):
 
 def targets(request):
     current = active_target(request.user)
-    form = TargetForm(request.POST or None, initial=target_payload(current))
+    initial = target_payload(current)
+    # Optional targets prefill only when set; None keeps the field empty.
+    for name in ("sugar", "sodium"):
+        if current and getattr(current, name, None) is not None:
+            initial[name] = getattr(current, name)
+    form = TargetForm(request.POST or None, initial=initial)
     if request.method == "POST":
         try:
             if request.POST.get("action") == "calculate":

@@ -46,6 +46,20 @@ class ArchiveTests(TestCase):
             with self.subTest(record=record), self.assertRaises(ValidationError):
                 validate_archive({'schema_version': 1, 'records': [record]}, self.user)
 
+    def test_old_target_archive_without_sugar_sodium_imports(self):
+        # Archives exported before the sugar/sodium target fields existed
+        # must still validate; the importer fills them as unset.
+        target = m.NutritionTarget(version=1, calories=2200, protein=150, carbs=240,
+                                   fat=70, fiber=30, reason='old export')
+        payload = self.payload(target)
+        for record in payload['records']:
+            record['fields'].pop('sugar', None)
+            record['fields'].pop('sodium', None)
+        objects = validate_archive(payload, self.user)
+        self.assertEqual(len(objects), 1)
+        # New exports carry the fields and validate unchanged.
+        self.assertEqual(len(validate_archive(self.payload(target), self.user)), 1)
+
     def test_plan_semantics_and_refs_validated_at_preview(self):
         exercise = self.exercise()
         for overrides in ({'schedule': 'Legs'}, {'schedule': []}, {'schedule_type': 'fixed', 'schedule': {'8': 'Legs'}},

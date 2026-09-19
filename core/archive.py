@@ -229,6 +229,11 @@ def validate_archive(payload, user, *, keep_profile=False):
             if version == 1:
                 fields.setdefault('activity_type', 'strength')
                 fields.setdefault('archived', False)
+        if model is models.NutritionTarget:
+            # Archives exported before sugar/sodium targets existed lack
+            # these columns; import them as unset.
+            fields.setdefault('sugar', None)
+            fields.setdefault('sodium', None)
         expected = {f.name for f in model._meta.fields} - {'id', 'user'}
         if set(fields) != expected:
             raise ValidationError('Missing or unknown fields for ' + record['model'])

@@ -156,6 +156,8 @@ class NutritionTarget(Owned):
     carbs = number(2000)
     fat = number(1000)
     fiber = number(200)
+    sugar = optional(4000)
+    sodium = optional(100000)
     reason = models.TextField(blank=True)
 
     class Meta:
