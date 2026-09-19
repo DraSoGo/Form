@@ -112,9 +112,12 @@
     <ul class="food-list">
       {% for f in foods %}
         <li class="food-row">
-          <input class="food-checkbox" type="checkbox"
-                 name="food_ids" value="{{ f.pk }}"
-                 aria-label="Select {{ f.name }} for meal template">
+          <label class="food-select">
+            <input class="food-checkbox" type="checkbox"
+                   name="food_ids" value="{{ f.pk }}"
+                   aria-label="Select {{ f.name }} for meal template">
+            <span class="visually-hidden">Select {{ f.name }}</span>
+          </label>
 
           <details class="food-details">
             <summary class="food-summary">
