@@ -1241,7 +1241,8 @@ nav a[aria-current="page"]::after {
 .history-row .history-details { margin: 0; }
 .history-row .history-summary {
   display: grid;
-  grid-template-columns: 1fr auto auto auto;
+  /* Three zones: date/source left, metrics centered, actions + chevron right. */
+  grid-template-columns: minmax(110px, auto) 1fr auto;
   align-items: center;
   gap: 12px;
   padding: 12px 14px;
@@ -1250,9 +1251,18 @@ nav a[aria-current="page"]::after {
   cursor: pointer;
   color: var(--ink);
 }
+/* The global summary::after "+" must not become a stray grid item here. */
+.history-row .history-summary::after { content: none; }
 .history-row .history-summary::-webkit-details-marker { display: none; }
 .history-row .history-summary:hover { background: var(--highlight); }
 .history-row details[open] .history-summary { background: var(--highlight); }
+
+.history-metrics {
+  display: flex;
+  justify-content: center;
+  gap: 24px;
+  min-width: 0;
+}
 
 .history-date {
   display: flex;
@@ -1291,6 +1301,20 @@ nav a[aria-current="page"]::after {
 .history-actions-cell {
   flex: 0 0 auto;
   font-size: 14px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.history-chevron {
+  width: 18px;
+  height: 18px;
+  color: var(--muted);
+  flex: 0 0 auto;
+  transition: transform .2s ease;
+}
+.history-row details[open] .history-chevron {
+  transform: rotate(90deg);
+  color: var(--primary-hover);
 }
 .history-row .history-detail {
   padding: 0 14px 14px;
@@ -1339,11 +1363,19 @@ nav a[aria-current="page"]::after {
 
 @media (max-width: 720px) {
   .history-row .history-summary {
-    grid-template-columns: 1fr auto auto;
+    /* Two lines: date+source on top, metrics + edit + chevron below.
+       Nothing detached, no horizontal overflow. */
+    grid-template-columns: 1fr auto;
+    grid-template-areas:
+      "date   actions"
+      "metrics actions";
+    align-items: center;
     padding: 12px 10px;
-    gap: 8px;
+    gap: 6px 10px;
   }
-  .history-row .history-fat { display: none; }
+  .history-date { grid-area: date; }
+  .history-metrics { grid-area: metrics; justify-content: flex-start; gap: 16px; }
+  .history-actions-cell { grid-area: actions; }
   .history-actions-cell { font-size: 13px; }
 }
 

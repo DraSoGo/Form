@@ -64,8 +64,13 @@
           {{ field.label_tag }}
           {{ field }}
           {% if field.help_text %}<p class="helptext">{{ field.help_text }}</p>{% endif %}
+          {% if field.name == 'body_fat' %}
+            <p class="helptext">Optional — leave blank if your scale doesn't report it.</p>
+          {% endif %}
         </div>
       {% endfor %}
+      {# Balances the 3-column grid so body fat is not an isolated field. #}
+      <div aria-hidden="true"></div>
     </div>
 
     {% if advanced_fields %}
@@ -102,10 +107,13 @@
           <strong>{{ m.recorded_at|date:"j M" }}</strong>
           <small>{{ m.get_source_display }}</small>
         </span>
-        <span class="history-weight">{{ m.weight|default_if_none:"—" }}<small>kg</small></span>
-        <span class="history-fat">{{ m.body_fat|default_if_none:"—" }}<small>% fat</small></span>
+        <span class="history-metrics">
+          <span class="history-weight">{{ m.weight|default_if_none:"—" }}<small>kg</small></span>
+          <span class="history-fat">{{ m.body_fat|default_if_none:"—" }}<small>% fat</small></span>
+        </span>
         <span class="history-actions-cell">
           <a class="subtle-link" href="/edit/body/{{ m.pk }}/">Edit</a>
+          <svg class="history-chevron" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg>
         </span>
       </summary>
 
