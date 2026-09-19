@@ -691,8 +691,11 @@ def trends(request):
             request.user, day_start, day_start + timedelta(days=1)
         )
         daily.append({"date": date.strftime("%d %b"), **values})
-    groups["Calories"] = [{"date": d["date"], "value": d["calories"]} for d in daily]
-    groups["Protein"] = [{"date": d["date"], "value": d["protein"]} for d in daily]
+    # Only days with logged food become chart points; unlogged days would
+    # otherwise draw misleading zeros across the whole range.
+    logged = [d for d in daily if d["calories"] > 0]
+    groups["Calories"] = [{"date": d["date"], "value": d["calories"]} for d in logged]
+    groups["Protein"] = [{"date": d["date"], "value": d["protein"]} for d in logged]
     groups["Sleep"] = [
         {"date": s.date.strftime("%d %b"), "value": float(s.hours)}
         for s in SleepEntry.objects.filter(
