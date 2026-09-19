@@ -50,7 +50,12 @@
    Reset & base
    ========================================================================= */
 *, *::before, *::after { box-sizing: border-box; }
-html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
+html {
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+  /* Anchor jumps and scrollIntoView stop above the fixed bottom nav. */
+  scroll-padding-bottom: 96px;
+}
 body {
   margin: 0;
   font-family: var(--font-body);
@@ -289,6 +294,21 @@ label {
   margin: 14px 0;
 }
 .inline label, .inline input[type=checkbox] { margin: 0; }
+/* Comfortable touch target: the whole label row is ≥44px and the checkbox
+   itself stays small visually but is reached through its label. */
+.inline.checkbox-save-library {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 44px;
+  padding: 6px 10px;
+  margin: 10px 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  cursor: pointer;
+}
+.inline.checkbox-save-library input[type=checkbox] { width: 24px; height: 24px; min-height: 24px; }
 
 input, select, textarea {
   display: block;
