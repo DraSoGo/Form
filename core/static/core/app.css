@@ -331,6 +331,10 @@ input::placeholder, textarea::placeholder { color: var(--muted); }
 input:hover, select:hover, textarea:hover { border-color: var(--primary); }
 
 input[type=checkbox], input[type=radio] {
+  /* Reset the global input appearance:none — without it the browser draws
+     no checkmark, so ticking appears to do nothing. */
+  -webkit-appearance: auto;
+  appearance: auto;
   width: 20px;
   height: 20px;
   min-height: 20px;
