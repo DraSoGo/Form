@@ -1,0 +1,80 @@
+{% load static %}
+
+{% comment %}
+  Muscle map — interactive body chart (body-muscles UMD).
+
+  Context contract:
+    muscle_regions: dict {asset_region_id: intensity 0-10}
+    muscle_groups:  list of {"key", "direct", "indirect", ...}
+                    (canonical: chest/back/shoulders/biceps/triceps/abs/
+                     glutes/quads/hamstrings/calves)
+
+  This partial:
+    1. Embeds both context vars as JSON for the JS to consume
+       (Django's built-in json_script — no view changes needed).
+    2. Renders a server-rendered fallback table inside <details> for
+       accessibility / no-JS users.
+    3. Loads the body-muscles library at the bottom of the include;
+       deferred scripts execute in document order so this runs
+       before app.js initializes the chart.
+{% endcomment %}
+
+{# JSON for JS — both muscle_groups (list) and muscle_regions (dict) are JSON-serializable so json_script works directly. #}
+{{ muscle_groups|json_script:"muscle-map-groups" }}
+{{ muscle_regions|json_script:"muscle-map-regions" }}
+
+<section class="muscle-map" aria-label="Muscle training map">
+  <div class="muscle-map-head">
+    <div>
+      <p class="eyebrow" style="margin:0">Muscle map</p>
+      <h3 style="margin:4px 0 0;font-size:18px">Training load, last 7 days</h3>
+      <p class="muted" style="margin:6px 0 0;font-size:13px">
+        Not a medical measure. Based on completed, non-warmup sets.
+      </p>
+    </div>
+    <div class="muscle-toggle" role="tablist" aria-label="Body view">
+      <button type="button" id="muscle-view-front" aria-pressed="true"  role="tab">Front</button>
+      <button type="button" id="muscle-view-back"  aria-pressed="false" role="tab">Back</button>
+    </div>
+  </div>
+
+  <div id="muscle-chart" class="muscle-chart" aria-label="Interactive body muscle map"></div>
+
+  <p class="muscle-summary" id="muscle-summary" aria-live="polite">
+    Click a muscle to see its 7-day set totals.
+  </p>
+
+  <div class="muscle-legend" aria-hidden="true">
+    <span class="muscle-swatch no-data">No data</span>
+    <span class="muscle-swatch low">Low</span>
+    <span class="muscle-swatch moderate">Moderate</span>
+    <span class="muscle-swatch high">High</span>
+    <span class="muscle-swatch very-high">Very high</span>
+  </div>
+
+  <details class="muscle-fallback">
+    <summary>Text summary</summary>
+    <div class="table-wrap" style="margin-top:8px">
+      <table>
+        <thead><tr><th>Group</th><th>Direct sets</th><th>Indirect sets</th></tr></thead>
+        <tbody>
+        {% for g in muscle_groups %}
+          <tr><td>{{ g.key|title }}</td><td>{{ g.direct }}</td><td>{{ g.indirect }}</td></tr>
+        {% empty %}
+          <tr><td colspan="3">No muscle training data yet.</td></tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </details>
+</section>
+
+<noscript>
+  <p class="muted" style="font-size:13px">
+    Enable JavaScript for the interactive body map. The text summary above
+    shows your 7-day set totals per muscle group.
+  </p>
+</noscript>
+
+{# Vendor library, deferred so it loads before app.js. #}
+<script src="{% static 'core/vendor/body-muscles.umd.min.js' %}" defer></script>

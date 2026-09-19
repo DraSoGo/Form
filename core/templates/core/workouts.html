@@ -1,1 +1,199 @@
-{% extends "core/base.html" %}{% block content %}<p class="eyebrow">BUILD CONSISTENCY</p><h1>Your training</h1><div class="actions"><a class="button" href="/workouts/plan/">Edit workout plan</a><a href="/add/exercise/">+ Exercise</a></div><section class="card"><h2>{{ plan.name|default:"Start your routine" }}</h2><p>{{ plan.get_schedule_type_display }} · Version {{ plan.version }}</p><p>{{ plan.schedule }}</p><form method="post" action="/workouts/start/">{% csrf_token %}<label>Session / plan day name<input name="name" value="Workout" required></label><label class="inline"><input type="checkbox" name="copy_last" value="1"> Copy last session</label><button>Start session</button></form></section><h2>Sessions</h2>{% for s in sessions %}<div class="row"><a href="/workouts/session/{{ s.pk }}/">{{ s.name }} · {{ s.started_at }} · {% if s.finished_at %}Finished{% else %}In progress{% endif %}</a><form method="post" action="/delete/session/{{ s.pk }}/">{% csrf_token %}<button class="secondary">Delete</button></form></div>{% endfor %}<h2>Weekly volume</h2>{% include 'core/volume.html' %}<h2>Exercise library</h2>{% for e in exercises %}<div class="row"><a class="exercise-link" href="/edit/exercise/{{ e.pk }}/"><span class="exercise-name">{{ e.name }}</span><small class="exercise-meta">{{ e.get_activity_type_display }}{% if e.activity_type == "cardio" and e.default_minutes %} · {{ e.default_minutes }} min{% endif %} · {{ e.equipment|default:"No equipment" }}</small></a><form method="post" action="/exercise/{{ e.pk }}/archive/">{% csrf_token %}<button class="secondary">Archive</button></form></div>{% endfor %}<details class="card"><summary>Archived exercises</summary>{% for e in archived_exercises %}<p>{{ e.name }} · {{ e.get_activity_type_display }}</p>{% empty %}<p>No archived exercises.</p>{% endfor %}</details><details class="card"><summary>Legacy cardio</summary><p>Cardio saved before the training update remains here.</p>{% for c in legacy_cardio %}<div class="row"><a href="/edit/cardio/{{ c.pk }}/">{{ c.kind }} · {{ c.minutes }} min · {{ c.recorded_at }}</a><form method="post" action="/delete/cardio/{{ c.pk }}/">{% csrf_token %}<button class="secondary">Delete</button></form></div>{% empty %}<p>No legacy cardio.</p>{% endfor %}</details><details><summary>Plan version history</summary>{% for p in plans %}<p>v{{ p.version }} · {{ p.name }} · {{ p.created_at }} · {{ p.reason }}</p>{% endfor %}</details>{% endblock %}
+{% extends "core/base.html" %}
+{% block title %}Training · Form{% endblock %}
+
+{% block content %}
+
+<p class="eyebrow">Build consistency</p>
+<h1>Your training</h1>
+<div class="actions">
+  <a class="button" href="/workouts/plan/">Edit workout plan</a>
+  <a class="subtle-link" href="/add/exercise/">+ Exercise</a>
+</div>
+
+{# ── Plan-day cards ──────────────────────────────────────────────── #}
+{% if plan_days %}
+  <h2>This week's plan</h2>
+  <div class="plan-cards">
+    {% for day in plan_days %}
+      <article class="plan-card {% if day.today %}is-today{% endif %}">
+        <div class="plan-card-head">
+          <h3 class="plan-card-name">{{ day.name }}</h3>
+          {% if day.today %}<span class="today-tag">Today</span>{% endif %}
+        </div>
+        <p class="plan-card-meta">
+          <strong>{{ day.exercise_count }}</strong> exercises
+          · ~<strong>{{ day.duration }}</strong> min
+          · <strong>{{ day.sets }}</strong> sets
+        </p>
+        <div class="plan-pills">
+          {% for ex in day.first_exercises %}
+            <span class="plan-pill">
+              {{ ex.name }}{% if ex.sets %} <small>· {{ ex.sets }}×</small>{% endif %}
+            </span>
+          {% endfor %}
+          {% if day.more %}<span class="plan-card-more">+{{ day.more }} more</span>{% endif %}
+        </div>
+        <div class="actions">
+          <form method="post" action="/workouts/start/">
+            {% csrf_token %}
+            <input type="hidden" name="name" value="{{ day.name }}">
+            <button>Start {{ day.name }} →</button>
+          </form>
+        </div>
+      </article>
+    {% endfor %}
+  </div>
+{% elif plan %}
+  <section class="card">
+    <h2>{{ plan.name }}</h2>
+    <p class="muted">{{ plan.get_schedule_type_display }} · Version {{ plan.version }}</p>
+    <p class="muted">This plan has no exercises assigned to days yet. <a href="/workouts/plan/">Open the editor</a> to add some.</p>
+  </section>
+{% else %}
+  <section class="card">
+    <h2>Start your routine</h2>
+    <p class="muted">Create a plan so every session knows which exercises to do.</p>
+    <div class="actions">
+      <a class="button" href="/workouts/plan/">Create workout plan</a>
+    </div>
+  </section>
+{% endif %}
+
+{# ── Muscle map ──────────────────────────────────────────────────── #}
+<h2>Muscle map</h2>
+{% include "core/muscle_map.html" %}
+
+{# ── Manual session start (fallback, also the "unplanned" anchor) ─── #}
+<details class="card" id="unplanned">
+  <summary>Start an unplanned workout</summary>
+  <p class="muted">For days when no plan day fits — or you just want to freestyle.</p>
+  <form method="post" action="/workouts/start/">
+    {% csrf_token %}
+    <label>Session / plan day name
+      <input name="name" value="Workout" required>
+    </label>
+    <label class="inline">
+      <input type="checkbox" name="copy_last" value="1"> Copy last session
+    </label>
+    <div class="actions">
+      <button>Start session</button>
+      <a class="subtle-link" href="/workouts/">Cancel</a>
+    </div>
+  </form>
+</details>
+
+{# ── Sessions ────────────────────────────────────────────────────── #}
+<h2>Sessions</h2>
+{% for s in sessions %}
+  <div class="row session-row">
+    <a href="/workouts/session/{{ s.pk }}/">{{ s.name }} · {{ s.started_at }}</a>
+    <div class="session-end">
+      {% if s.finished_at %}
+        <span class="chip completed">Completed</span>
+      {% else %}
+        <span class="chip in-progress">In progress</span>
+      {% endif %}
+      <form method="post" action="/delete/session/{{ s.pk }}/">
+        {% csrf_token %}
+        <button class="secondary">Delete</button>
+      </form>
+    </div>
+  </div>
+{% empty %}
+  <p class="muted">No sessions yet — start one above or pick a plan day.</p>
+{% endfor %}
+
+{# ── Weekly volume (table from volume.html include) ───────────────── #}
+<h2>Weekly volume</h2>
+{% include 'core/volume.html' %}
+
+{# ── Exercise library ────────────────────────────────────────────── #}
+<h2>Exercise library</h2>
+<div class="library-search">
+  <label for="exercise-search" class="visually-hidden">Search exercises</label>
+  <input id="exercise-search" type="search" placeholder="Search exercises…">
+</div>
+
+<div id="exercise-library">
+  {# Strength group #}
+  <div class="library-group" data-activity="strength">
+    <h4>Strength</h4>
+    {% for e in exercises %}{% if e.activity_type != "cardio" %}
+      <div class="row library-row"
+           data-search="{{ e.name|lower }} {{ e.get_activity_type_display|lower }} {{ e.equipment|lower }}">
+        <a class="exercise-link" href="/edit/exercise/{{ e.pk }}/">
+          <span class="exercise-name">{{ e.name }}</span>
+          <small class="exercise-meta">
+            {{ e.get_activity_type_display }}
+            {% if e.equipment %} · {{ e.equipment }}{% else %} · No equipment{% endif %}
+          </small>
+        </a>
+        <form method="post" action="/exercise/{{ e.pk }}/archive/">
+          {% csrf_token %}
+          <button class="secondary">Archive</button>
+        </form>
+      </div>
+    {% endif %}{% endfor %}
+  </div>
+
+  {# Cardio group #}
+  <div class="library-group" data-activity="cardio">
+    <h4>Cardio</h4>
+    {% for e in exercises %}{% if e.activity_type == "cardio" %}
+      <div class="row library-row"
+           data-search="{{ e.name|lower }} {{ e.get_activity_type_display|lower }} {{ e.equipment|lower }}">
+        <a class="exercise-link" href="/edit/exercise/{{ e.pk }}/">
+          <span class="exercise-name">{{ e.name }}</span>
+          <small class="exercise-meta">
+            {{ e.get_activity_type_display }}
+            {% if e.default_minutes %} · {{ e.default_minutes }} min{% endif %}
+            {% if e.equipment %} · {{ e.equipment }}{% else %} · No equipment{% endif %}
+          </small>
+        </a>
+        <form method="post" action="/exercise/{{ e.pk }}/archive/">
+          {% csrf_token %}
+          <button class="secondary">Archive</button>
+        </form>
+      </div>
+    {% endif %}{% endfor %}
+  </div>
+
+  <p class="library-empty" hidden>No exercises match your search.</p>
+</div>
+
+{# ── Archived & legacy & plan history (kept from original) ───────── #}
+<details class="card">
+  <summary>Archived exercises</summary>
+  {% for e in archived_exercises %}
+    <p>{{ e.name }} · {{ e.get_activity_type_display }}</p>
+  {% empty %}
+    <p class="muted">No archived exercises.</p>
+  {% endfor %}
+</details>
+
+<details class="card">
+  <summary>Legacy cardio</summary>
+  <p class="muted">Cardio saved before the training update remains here.</p>
+  {% for c in legacy_cardio %}
+    <div class="row">
+      <a href="/edit/cardio/{{ c.pk }}/">{{ c.kind }} · {{ c.minutes }} min · {{ c.recorded_at }}</a>
+      <form method="post" action="/delete/cardio/{{ c.pk }}/">
+        {% csrf_token %}
+        <button class="secondary">Delete</button>
+      </form>
+    </div>
+  {% empty %}
+    <p class="muted">No legacy cardio.</p>
+  {% endfor %}
+</details>
+
+<details class="card">
+  <summary>Plan version history</summary>
+  {% for p in plans %}
+    <p>v{{ p.version }} · {{ p.name }} · {{ p.created_at }} · {{ p.reason }}</p>
+  {% empty %}
+    <p class="muted">No version history yet.</p>
+  {% endfor %}
+</details>
+
+{% endblock %}
