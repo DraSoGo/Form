@@ -246,3 +246,25 @@ const chartData=document.querySelector('#chart-data');if(chartData){const charts
   input.addEventListener('input', apply);
   apply();
 })();
+
+// =========================================================================
+// Body page: focus the weight field when navigating to #weight-field
+// -------------------------------------------------------------------------
+// The Weight quick-add card links to the measurement form's weight input
+// wrapper. Browsers handle the scroll, but only the wrapper div gets
+// focus by default — the <input> inside needs explicit focus to surface
+// the mobile keyboard and on-screen picker.
+// =========================================================================
+
+(function initWeightFocus(){
+  function focusOnHash(){
+    const id = (location.hash || '').slice(1);
+    if (!id) return;
+    const wrap = document.getElementById(id);
+    if (!wrap) return;
+    const input = wrap.querySelector('input, select, textarea');
+    if (input) input.focus({ preventScroll: false });
+  }
+  window.addEventListener('hashchange', focusOnHash);
+  if (location.hash) focusOnHash();
+})();
