@@ -12,9 +12,9 @@
     <h2>Daily nourishment</h2>
     {% for bar in bars %}
     <div class="metric">
-      <span>{{ bar.name|title }}</span>
-      <strong>{{ bar.value }} / {{ bar.target }}</strong>
-      <progress value="{{ bar.percent }}" max="100"></progress>
+      <span>{{ bar.name|title }}{% if bar.name == "sodium" %} (mg){% elif bar.name == "sugar" %} (g){% endif %}</span>
+      <strong>{{ bar.value }} / {% if bar.target %}{{ bar.target }}{% else %}—{% endif %}</strong>
+      {% if bar.target %}<progress value="{{ bar.percent }}" max="100"></progress>{% endif %}
     </div>
     {% empty %}
     <p class="muted">No nutrition targets yet. <a href="/targets/">Set targets</a> to track your day.</p>
@@ -29,6 +29,13 @@
     <p class="eyebrow" style="margin-bottom:4px">Today's movement</p>
     <h2>{{ scheduled|default:"Your next session" }}</h2>
     <p>{{ plan.name|default:"Build your routine and track every set." }}</p>
+    {% if today_exercises %}
+    <ul class="today-exercise-list">
+      {% for ex in today_exercises %}
+      <li><span>{{ ex.name }}</span><small>{{ ex.detail }}</small></li>
+      {% endfor %}
+    </ul>
+    {% endif %}
     <div class="actions">
       <form method="post" action="/workouts/start/">
         {% csrf_token %}

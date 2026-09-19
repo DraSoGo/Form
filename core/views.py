@@ -47,8 +47,8 @@ def dashboard(request):
             ).count()
             scheduled = plan.schedule[completed % len(plan.schedule)]
     bars = []
-    for name in ["calories", "protein", "carbs", "fat", "fiber"]:
-        goal = float(getattr(target, name)) if target else 0
+    for name in ["calories", "protein", "carbs", "fat", "fiber", "sugar", "sodium"]:
+        goal = float(getattr(target, name)) if target and getattr(target, name, None) else 0
         bars.append(
             {
                 "name": name,
@@ -57,6 +57,32 @@ def dashboard(request):
                 "percent": min(100, round(totals[name] / goal * 100)) if goal else 0,
             }
         )
+    # Exercise list for today's scheduled day (the same derivation the
+    # workouts view uses for plan cards).
+    today_exercises = []
+    if plan and scheduled and scheduled != "Rest":
+        exercise_ids = {
+            item.get("exercise") for item in plan.exercises if item.get("exercise")
+        }
+        names_by_pk = {
+            str(ex.pk): ex.name
+            for ex in Exercise.objects.filter(user=request.user, pk__in=exercise_ids)
+        }
+        single_day = len(set(plan.schedule.values() if plan.schedule_type == "fixed" else plan.schedule) - {"Rest"}) <= 1
+        for item in plan.exercises:
+            day = item.get("day", scheduled if single_day else None)
+            if day != scheduled:
+                continue
+            name = names_by_pk.get(str(item.get("exercise")))
+            if not name:
+                continue
+            if "minutes" in item:
+                today_exercises.append({"name": name, "detail": f"{item['minutes']} min"})
+            else:
+                today_exercises.append(
+                    {"name": name, "detail": f"{item.get('sets', 3)} × {item.get('rep_min', 8)}–{item.get('rep_max', 12)}"}
+                )
+        today_exercises = today_exercises[:6]
     muscle_groups = [
         {"key": muscle, **muscle_summary(request.user, muscle)}
         for muscle in ["chest", "back", "shoulders", "biceps", "triceps", "abs", "glutes", "quads", "hamstrings", "calves"]
@@ -73,6 +99,7 @@ def dashboard(request):
             "sleep": SleepEntry.objects.filter(user=request.user).first(),
             "scheduled": scheduled,
             "plan": plan,
+            "today_exercises": today_exercises,
             "muscle_regions": region_states(request.user, 7),
             "muscle_groups": muscle_groups,
             "foods": FoodEntry.objects.filter(
