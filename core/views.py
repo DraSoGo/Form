@@ -146,15 +146,27 @@ def generic_edit(request, kind, pk=None):
         obj = form.save(commit=False)
         obj.user = request.user
         if kind == "exercise":
-            names = {obj.name.casefold(), *[str(x).casefold() for x in obj.aliases]}
-            conflict = any(
-                names & {x.name.casefold(), *[str(a).casefold() for a in x.aliases]}
-                for x in Exercise.objects.filter(user=request.user).exclude(pk=obj.pk)
-            )
+            # Empty strings from the comma-list field must not look like
+            # real aliases when checking for conflicts.
+            new_names = {
+                obj.name.casefold(),
+                *[str(x).casefold() for x in obj.aliases if str(x).strip()],
+            }
+            conflict = None
+            for other in Exercise.objects.filter(user=request.user).exclude(pk=obj.pk):
+                existing = {
+                    other.name.casefold(),
+                    *[str(a).casefold() for a in other.aliases if str(a).strip()],
+                }
+                overlap = new_names & existing
+                if overlap:
+                    conflict = (other, overlap)
+                    break
             if conflict:
                 form.add_error(
                     "name",
-                    "This name or alias already belongs to an exercise. Use its canonical entry.",
+                    f"This name or alias already belongs to the exercise "
+                    f"\"{conflict[0].name}\". Use that entry instead.",
                 )
             elif not all(
                 isinstance(getattr(obj, f), list)
