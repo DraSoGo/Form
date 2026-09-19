@@ -565,6 +565,12 @@ def session_detail(request, pk):
     last = WorkoutSession.objects.filter(
         user=request.user, name=session.name, started_at__lt=session.started_at
     ).first()
+    # Pre-fill order with the next number after the current last set.
+    next_order = (session.sets.aggregate(m=Max("order"))["m"] or 0) + 1
+    form.fields["order"].initial = next_order
+    cardio_form.fields["order"].initial = (
+        session.cardio.aggregate(m=Max("order"))["m"] or 0
+    ) + 1
     return render(
         request,
         "core/session.html",

@@ -1,1 +1,86 @@
-{% extends "core/base.html" %}{% block content %}<p class="eyebrow">{{ session.started_at }}</p><h1>{{ session.name }}</h1><section class="card timer"><h2>Rest timer</h2><output id="timer" aria-live="polite">Ready</output><div class="actions"><button type="button" data-timer="60">60 sec</button><button type="button" data-timer="90">90 sec</button><button type="button" data-timer="120">2 min</button><button type="button" data-timer="0">Stop</button></div></section>{% for s in sets %}<article class="card"><h3>{{ s.exercise.name }} · {{ s.get_set_type_display }}</h3><p class="big">{{ s.weight }} kg × {{ s.reps }}</p><p>RIR {{ s.rir|default_if_none:"—" }} · RPE {{ s.rpe|default_if_none:"—" }} · Rest {{ s.rest_seconds }}s</p><p>{{ s.notes }}</p><div class="actions"><a href="/workouts/set/{{ s.pk }}/">Edit set</a><form method="post" action="/workouts/set/{{ s.pk }}/complete/">{% csrf_token %}<button>{% if s.completed %}✓ Completed · undo{% else %}Complete & rest{% endif %}</button></form><form method="post" action="/delete/set/{{ s.pk }}/">{% csrf_token %}<button class="secondary">Delete</button></form></div></article>{% endfor %}{% for c in cardio %}<article class="card"><h3>{{ c.exercise.name }} · Cardio</h3><p class="big">{{ c.minutes }} min</p><p>{{ c.notes }}</p><div class="actions"><a href="/workouts/cardio/{{ c.pk }}/">Edit cardio</a><form method="post" action="/workouts/cardio/{{ c.pk }}/complete/">{% csrf_token %}<button>{% if c.completed %}✓ Completed · undo{% else %}Complete{% endif %}</button></form><form method="post" action="/delete/workout-cardio/{{ c.pk }}/">{% csrf_token %}<button class="secondary">Delete</button></form></div></article>{% endfor %}<div class="grid"><details class="card"><summary>Add strength set</summary><form method="post">{% csrf_token %}{{ form.as_p }}<button>Add set</button></form></details><details class="card"><summary>Add cardio</summary><form method="post">{% csrf_token %}<input type="hidden" name="activity" value="cardio">{{ cardio_form.as_p }}<button>Add cardio</button></form></details></div><details class="card"><summary>Previous session · {{ last.started_at }}</summary>{% for s in previous %}<p>{{ s.exercise.name }}: {{ s.weight }} kg × {{ s.reps }}</p>{% empty %}<p>No previous strength sets.</p>{% endfor %}</details><form method="post" class="card">{% csrf_token %}<input type="hidden" name="action" value="finish"><label>Session notes<textarea name="notes" maxlength="4000">{{ session.notes }}</textarea></label><button>Finish session</button></form>{% endblock %}
+{% extends "core/base.html" %}
+{% block title %}{{ session.name }} · Form{% endblock %}
+{% block content %}
+
+<p class="eyebrow">{{ session.started_at }}</p>
+<h1>{{ session.name }}</h1>
+
+<section class="card timer">
+  <h2>Rest timer</h2>
+  <output id="timer" aria-live="polite">Ready</output>
+  <div class="actions">
+    <button type="button" data-timer="60">60 sec</button>
+    <button type="button" data-timer="90">90 sec</button>
+    <button type="button" data-timer="120">2 min</button>
+    <button type="button" data-timer="0">Stop</button>
+  </div>
+</section>
+
+{# ── Quick actions near the top: add sets / cardio, compare with last time ── #}
+<div class="grid">
+  <details class="card">
+    <summary>Add strength set</summary>
+    <form method="post">
+      {% csrf_token %}
+      {{ form.as_p }}
+      <button>Add set</button>
+    </form>
+  </details>
+  <details class="card">
+    <summary>Add cardio</summary>
+    <form method="post">
+      {% csrf_token %}
+      <input type="hidden" name="activity" value="cardio">
+      {{ cardio_form.as_p }}
+      <button>Add cardio</button>
+    </form>
+  </details>
+</div>
+
+{% if last %}
+<details class="card">
+  <summary>Previous session · {{ last.started_at }}</summary>
+  {% for s in previous %}
+    <p>{{ s.exercise.name }}: {{ s.weight }} kg × {{ s.reps }}</p>
+  {% empty %}
+    <p>No previous strength sets.</p>
+  {% endfor %}
+</details>
+{% endif %}
+
+{# ── Today's sets ── #}
+{% for s in sets %}
+  <article class="card">
+    <h3>{{ s.exercise.name }} · {{ s.get_set_type_display }}</h3>
+    <p class="big">{{ s.weight }} kg × {{ s.reps }}</p>
+    <p>RIR {{ s.rir|default_if_none:"—" }} · RPE {{ s.rpe|default_if_none:"—" }} · Rest {{ s.rest_seconds }}s</p>
+    <p>{{ s.notes }}</p>
+    <div class="actions">
+      <a href="/workouts/set/{{ s.pk }}/">Edit set</a>
+      <form method="post" action="/workouts/set/{{ s.pk }}/complete/">{% csrf_token %}<button>{% if s.completed %}✓ Completed · undo{% else %}Complete &amp; rest{% endif %}</button></form>
+      <form method="post" action="/delete/set/{{ s.pk }}/">{% csrf_token %}<button class="secondary">Delete</button></form>
+    </div>
+  </article>
+{% endfor %}
+
+{% for c in cardio %}
+  <article class="card">
+    <h3>{{ c.exercise.name }} · Cardio</h3>
+    <p class="big">{{ c.minutes }} min</p>
+    <p>{{ c.notes }}</p>
+    <div class="actions">
+      <a href="/workouts/cardio/{{ c.pk }}/">Edit cardio</a>
+      <form method="post" action="/workouts/cardio/{{ c.pk }}/complete/">{% csrf_token %}<button>{% if c.completed %}✓ Completed · undo{% else %}Complete{% endif %}</button></form>
+      <form method="post" action="/delete/workout-cardio/{{ c.pk }}/">{% csrf_token %}<button class="secondary">Delete</button></form>
+    </div>
+  </article>
+{% endfor %}
+
+<form method="post" class="card">
+  {% csrf_token %}
+  <input type="hidden" name="action" value="finish">
+  <label>Session notes<textarea name="notes" maxlength="4000">{{ session.notes }}</textarea></label>
+  <button>Finish session</button>
+</form>
+
+{% endblock %}
