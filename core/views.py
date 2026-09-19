@@ -17,6 +17,7 @@ from .models import *
 from .forms import *
 from .services import *
 from .archive import export_archive, validate_archive, import_archive, export_csv
+from .muscles import muscle_summary, region_states
 
 
 def health(request):
@@ -56,6 +57,10 @@ def dashboard(request):
                 "percent": min(100, round(totals[name] / goal * 100)) if goal else 0,
             }
         )
+    muscle_groups = [
+        {"key": muscle, **muscle_summary(request.user, muscle)}
+        for muscle in ["chest", "back", "shoulders", "biceps", "triceps", "abs", "glutes", "quads", "hamstrings", "calves"]
+    ]
     return render(
         request,
         "core/dashboard.html",
@@ -68,6 +73,8 @@ def dashboard(request):
             "sleep": SleepEntry.objects.filter(user=request.user).first(),
             "scheduled": scheduled,
             "plan": plan,
+            "muscle_regions": region_states(request.user, 7),
+            "muscle_groups": muscle_groups,
             "foods": FoodEntry.objects.filter(
                 user=request.user, recorded_at__gte=start
             )[:5],
@@ -77,7 +84,9 @@ def dashboard(request):
 
 
 def body(request):
-    form = BodyForm(request.POST or None)
+    use_advanced = request.POST.get("advanced") == "1"
+    form_class = AdvancedBodyForm if use_advanced else BodyForm
+    form = form_class(request.POST or None)
     if request.method == "POST" and form.is_valid():
         item = form.save(commit=False)
         item.user = request.user
@@ -90,11 +99,24 @@ def body(request):
             request, "Measurement saved. Previous readings remain in your history."
         )
         return redirect("/body/")
+    advanced_form = AdvancedBodyForm()
+    latest = BodyMeasurement.objects.filter(user=request.user).order_by("-recorded_at").first()
+    latest_summary = {
+        "weight": latest.weight,
+        "body_fat": latest.body_fat,
+        "recorded_at": latest.recorded_at,
+        "source": latest.source,
+    } if latest else {}
     return render(
         request,
         "core/body.html",
         {
             "form": form,
+            "advanced_form": advanced_form,
+            "advanced_fields": [
+                advanced_form[f] for f in ("muscle", "visceral_fat", "body_age", "bmr", "bmi")
+            ],
+            "latest": latest_summary,
             "measurements": BodyMeasurement.objects.filter(user=request.user)[:100],
             "sleep": SleepEntry.objects.filter(user=request.user)[:14],
             "steps": StepEntry.objects.filter(user=request.user)[:30],
@@ -104,7 +126,7 @@ def body(request):
 
 def generic_edit(request, kind, pk=None):
     mapping = {
-        "body": (BodyMeasurement, BodyForm, "Body measurement"),
+        "body": (BodyMeasurement, AdvancedBodyForm, "Body measurement"),
         "sleep": (SleepEntry, SleepForm, "Sleep"),
         "cardio": (CardioEntry, CardioForm, "Cardio"),
         "step": (StepEntry, StepForm, "Steps"),
@@ -204,16 +226,43 @@ def record_delete(request, kind, pk):
 
 def nutrition(request):
     today = timezone.localdate()
-    start = timezone.make_aware(datetime.combine(today, time.min))
+    date_param = request.GET.get("date", "today")
+    if date_param == "today":
+        selected_date = today
+    else:
+        try:
+            selected_date = datetime.strptime(date_param, "%Y-%m-%d").date()
+        except ValueError:
+            selected_date = today
+    start = timezone.make_aware(datetime.combine(selected_date, time.min))
+    end = start + timedelta(days=1)
+
+    active_status = request.GET.get("status", "")
+    valid_states = {
+        choice[0] for choice in FoodEntry._meta.get_field("state").choices
+    }
+    if active_status and active_status not in valid_states:
+        active_status = ""
+
+    foods = FoodEntry.objects.filter(
+        user=request.user, recorded_at__gte=start, recorded_at__lt=end
+    )
+    if active_status:
+        foods = foods.filter(state=active_status)
+    foods = foods.order_by("-recorded_at")[:100]
+
     return render(
         request,
         "core/nutrition.html",
         {
-            "foods": FoodEntry.objects.filter(user=request.user)[:100],
+            "foods": foods,
             "library": FoodLibrary.objects.filter(user=request.user),
             "templates": MealTemplate.objects.filter(user=request.user),
-            "totals": nutrition_totals(request.user, start, start + timedelta(days=1)),
+            "totals": nutrition_totals(request.user, start, end),
             "target": active_target(request.user),
+            "selected_date": selected_date,
+            "active_status": active_status,
+            "state_choices": FoodEntry._meta.get_field("state").choices,
         },
     )
 
@@ -361,17 +410,113 @@ def targets(request):
 
 def workouts(request):
     plan = active_plan(request.user)
+    plan_days = []
+    if plan:
+        if plan.schedule_type == "fixed":
+            day_names = []
+            seen = set()
+            for weekday in range(7):
+                name = plan.schedule.get(str(weekday))
+                if name and name not in seen:
+                    day_names.append(name)
+                    seen.add(name)
+        else:
+            day_names = list(plan.schedule)
+        today = timezone.localdate()
+        if plan.schedule_type == "fixed":
+            scheduled = plan.schedule.get(str(today.weekday()), "Rest")
+        else:
+            completed = WorkoutSession.objects.filter(
+                user=request.user, plan=plan, finished_at__isnull=False
+            ).count()
+            scheduled = plan.schedule[completed % len(plan.schedule)]
+        exercise_ids = {
+            item.get("exercise") for item in plan.exercises if item.get("exercise")
+        }
+        names_by_pk = {
+            str(ex.pk): ex.name
+            for ex in Exercise.objects.filter(user=request.user, pk__in=exercise_ids)
+        }
+        single_day = len(day_names) == 1
+        for day_name in day_names:
+            if single_day:
+                items = [
+                    item for item in plan.exercises
+                    if item.get("day", day_name) == day_name
+                ]
+            else:
+                items = [
+                    item for item in plan.exercises
+                    if item.get("day") == day_name
+                ]
+            total_sets = 0
+            duration = 0
+            first_exercises = []
+            for item in items:
+                is_cardio = "minutes" in item
+                if is_cardio:
+                    total_sets += 1
+                    sets = None
+                    duration += item.get("minutes", 20)
+                else:
+                    sets = item.get("sets", 3)
+                    total_sets += sets
+                    duration += sets * 3
+                if len(first_exercises) < 3:
+                    name = names_by_pk.get(str(item.get("exercise")))
+                    if name:
+                        first_exercises.append({"name": name, "sets": sets})
+            # ponytail: duration is a crude per-exercise estimate; refine with logged times
+            plan_days.append({
+                "name": day_name,
+                "sets": total_sets,
+                "duration": round(duration / 5) * 5,
+                "exercise_count": len(items),
+                "first_exercises": first_exercises,
+                "more": max(0, len(items) - 3),
+                "today": day_name == scheduled,
+            })
+    # Muscle map: per training day via ?day=, defaulting to the last 7 days.
+    training_days = list(
+        WorkoutSession.objects.filter(user=request.user)
+        .exclude(name="Rest")
+        .values_list("started_at", flat=True)
+        .order_by("-started_at")[:14]
+    )
+    day_options = sorted(
+        {timezone.localtime(s).date() for s in training_days}, reverse=True
+    )[:10]
+    selected_day = None
+    day_param = request.GET.get("day", "")
+    try:
+        parsed = datetime.strptime(day_param, "%Y-%m-%d").date() if day_param else None
+        if parsed in day_options:
+            selected_day = parsed
+    except ValueError:
+        selected_day = None
+    muscle_groups = [
+        {
+            "key": muscle,
+            **muscle_summary(request.user, muscle, on_date=selected_day),
+        }
+        for muscle in ["chest", "back", "shoulders", "biceps", "triceps", "abs", "glutes", "quads", "hamstrings", "calves"]
+    ]
     return render(
         request,
         "core/workouts.html",
         {
             "plan": plan,
+            "plan_days": plan_days,
             "plans": WorkoutPlan.objects.filter(user=request.user)[:10],
             "sessions": WorkoutSession.objects.filter(user=request.user)[:30],
             "exercises": Exercise.objects.filter(user=request.user, archived=False),
             "archived_exercises": Exercise.objects.filter(user=request.user, archived=True),
             "legacy_cardio": CardioEntry.objects.filter(user=request.user)[:30],
             "volume": weekly_volume(request.user),
+            "muscle_regions": region_states(request.user, 7, on_date=selected_day),
+            "muscle_groups": muscle_groups,
+            "training_day_options": day_options,
+            "selected_training_day": selected_day,
         },
     )
 
@@ -443,6 +588,12 @@ def session_detail(request, pk):
     last = WorkoutSession.objects.filter(
         user=request.user, name=session.name, started_at__lt=session.started_at
     ).first()
+    # Pre-fill order with the next number after the current last set.
+    next_order = (session.sets.aggregate(m=Max("order"))["m"] or 0) + 1
+    form.fields["order"].initial = next_order
+    cardio_form.fields["order"].initial = (
+        session.cardio.aggregate(m=Max("order"))["m"] or 0
+    ) + 1
     return render(
         request,
         "core/session.html",
@@ -540,8 +691,11 @@ def trends(request):
             request.user, day_start, day_start + timedelta(days=1)
         )
         daily.append({"date": date.strftime("%d %b"), **values})
-    groups["Calories"] = [{"date": d["date"], "value": d["calories"]} for d in daily]
-    groups["Protein"] = [{"date": d["date"], "value": d["protein"]} for d in daily]
+    # Only days with logged food become chart points; unlogged days would
+    # otherwise draw misleading zeros across the whole range.
+    logged = [d for d in daily if d["calories"] > 0]
+    groups["Calories"] = [{"date": d["date"], "value": d["calories"]} for d in logged]
+    groups["Protein"] = [{"date": d["date"], "value": d["protein"]} for d in logged]
     groups["Sleep"] = [
         {"date": s.date.strftime("%d %b"), "value": float(s.hours)}
         for s in SleepEntry.objects.filter(
@@ -579,6 +733,58 @@ def trends(request):
                     "pr": max(s["weight"] for s in entries),
                 }
             )
+    # Summary cards
+    workout_count = WorkoutSession.objects.filter(
+        user=request.user, started_at__gte=start
+    ).count()
+    workout_sub = (
+        f"{round(workout_count / days * 7, 1)} per week"
+        if workout_count else "No sessions in this period"
+    )
+
+    logged_days = [d for d in daily if d["calories"] > 0]
+    if logged_days:
+        avg_calories = int(round(sum(d["calories"] for d in logged_days) / len(logged_days)))
+        calories_value = f"{avg_calories} kcal"
+        calories_sub = f"{len(logged_days)} of {days} days logged"
+    else:
+        calories_value = "—"
+        calories_sub = "No food logged"
+
+    sleep_points = groups.get("Sleep", [])
+    if sleep_points:
+        avg_sleep = round(sum(p["value"] for p in sleep_points) / len(sleep_points), 1)
+        sleep_value = f"{avg_sleep} h"
+        sleep_sub = f"{len(sleep_points)} nights recorded"
+    else:
+        sleep_value = "—"
+        sleep_sub = "0 nights recorded"
+
+    weigh_ins = list(
+        BodyMeasurement.objects.filter(
+            user=request.user, recorded_at__gte=start, weight__isnull=False
+        ).order_by("recorded_at")
+    )
+    if len(weigh_ins) >= 2:
+        change = float(weigh_ins[-1].weight) - float(weigh_ins[0].weight)
+        if change > 0:
+            weight_value = f"+{change:.1f} kg"
+        elif change < 0:
+            weight_value = f"{change:.1f} kg"
+        else:
+            weight_value = "0.0 kg"
+        weight_sub = f"{len(weigh_ins)} weigh-ins"
+    else:
+        weight_value = "—"
+        weight_sub = "Add weigh-ins to see change"
+
+    summaries = [
+        {"label": "Workouts", "value": workout_count, "sub": workout_sub},
+        {"label": "Avg calories", "value": calories_value, "sub": calories_sub},
+        {"label": "Avg sleep", "value": sleep_value, "sub": sleep_sub},
+        {"label": "Weight change", "value": weight_value, "sub": weight_sub},
+    ]
+
     return render(
         request,
         "core/trends.html",
@@ -587,6 +793,7 @@ def trends(request):
             "charts": groups,
             "performance": performance,
             "volume": weekly_volume(request.user),
+            "summaries": summaries,
         },
     )
 
@@ -696,8 +903,8 @@ def manifest(request):
             "start_url": "/",
             "scope": "/",
             "display": "standalone",
-            "background_color": "#f6f5ee",
-            "theme_color": "#214d3a",
+            "background_color": "#101613",
+            "theme_color": "#18211b",
             "icons": [
                 {
                     "src": "/static/core/icon-192.png",

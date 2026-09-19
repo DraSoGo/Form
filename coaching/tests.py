@@ -130,7 +130,7 @@ class CoachingTests(TestCase):
     def test_coach_action_controls_use_spaced_groups(self):
         self.client.force_login(self.user)
         response=self.client.get('/coach/')
-        self.assertContains(response,'<div class="actions"><form class="action-form"',html=False)
+        self.assertContains(response,'<div class="coach-actions">',html=False)
     @patch('coaching.services.route')
     def test_photo_analysis_editable_and_changed_entry_protected(self,mock):
         from PIL import Image
@@ -177,6 +177,21 @@ class CoachingTests(TestCase):
         self.assertEqual(job.error,'exercise_changed_review_required')
         self.assertEqual(exercise.aliases,[])
         self.assertEqual(exercise.primary_muscles,['Shoulders'])
+
+    def test_exercise_prompt_constrains_muscles_to_map_vocabulary(self):
+        # The prompt must enumerate the canonical muscle groups so AI-filled
+        # metadata always maps onto the muscle map.
+        from core.muscles import MUSCLES, normalize
+        with patch('coaching.services.route') as mock:
+            mock.return_value=({'aliases':[],'primary_muscles':['chest'],'secondary_muscles':[],'classification':'compound'},'gpt','test')
+            exercise=Exercise.objects.create(user=self.user,name='Bench press')
+            run_job(enqueue_exercise(self.user,exercise))
+        prompt=mock.call_args[0][2]
+        for muscle in MUSCLES:
+            self.assertIn(muscle,prompt)
+        # Every canonical name must resolve through the normalizer.
+        for muscle in MUSCLES:
+            self.assertEqual(normalize(muscle),muscle)
 
 class AdapterTests(SimpleTestCase):
     def test_nutrition_range_validation(self):

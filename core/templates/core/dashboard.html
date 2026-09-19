@@ -1,1 +1,90 @@
-{% extends "core/base.html" %}{% block content %}<p class="eyebrow">{{ today|date:"l, j F" }}</p><h1>Make today count.</h1><p class="muted">A little consistency goes a long way.</p><div class="grid"><section class="card"><h2>Daily nourishment</h2>{% for bar in bars %}<div class="metric"><span>{{ bar.name|title }}</span><strong>{{ bar.value }} / {{ bar.target }}</strong><progress value="{{ bar.percent }}" max="100"></progress></div>{% endfor %}<div class="actions"><a class="button" href="/nutrition/new/">+ Log food</a><a href="/targets/">Set targets</a></div></section><section class="card accent"><p class="eyebrow">TODAY'S MOVEMENT</p><h2>{{ scheduled|default:"Your next session" }}</h2><p>{{ plan.name|default:"Build your routine and track every set." }}</p><div class="actions"><form method="post" action="/workouts/start/">{% csrf_token %}<input type="hidden" name="name" value="{{ scheduled|default:'Workout' }}"><button>Start session →</button></form><a href="/workouts/">View training</a></div></section><section class="card"><h2>Recovery & body</h2><p>Latest weight <strong>{{ body.weight|default_if_none:"—" }} kg</strong></p><p>Latest sleep <strong>{{ sleep.hours|default:"—" }} hours</strong></p><a href="/body/">Add a check-in →</a></section><section class="card"><h2>Your coach</h2><p>Review your summaries and suggested changes.</p><div class="actions"><a class="button" href="/coach/">Open coach</a><form method="post" action="/coach/request/daily/">{% csrf_token %}<button class="secondary">End day</button></form></div></section></div><h2>Recent food</h2>{% for food in foods %}<a class="row" href="/nutrition/{{ food.pk }}/"><span>{{ food.name }}</span><strong>{{ food.calories }} kcal</strong></a>{% empty %}<p>Start with your first meal.</p>{% endfor %}{% endblock %}
+{% extends "core/base.html" %}
+{% block title %}Today · Form{% endblock %}
+
+{% block content %}
+
+<p class="eyebrow">{{ today|date:"l, j F" }}</p>
+<h1>Make today count.</h1>
+<p class="muted">A little consistency goes a long way.</p>
+
+<div class="grid">
+  <section class="card">
+    <h2>Daily nourishment</h2>
+    {% for bar in bars %}
+    <div class="metric">
+      <span>{{ bar.name|title }}</span>
+      <strong>{{ bar.value }} / {{ bar.target }}</strong>
+      <progress value="{{ bar.percent }}" max="100"></progress>
+    </div>
+    {% empty %}
+    <p class="muted">No nutrition targets yet. <a href="/targets/">Set targets</a> to track your day.</p>
+    {% endfor %}
+    <div class="actions">
+      <a class="button" href="/nutrition/new/">+ Log food</a>
+      <a class="subtle-link" href="/targets/">Set targets</a>
+    </div>
+  </section>
+
+  <section class="card accent">
+    <p class="eyebrow" style="margin-bottom:4px">Today's movement</p>
+    <h2>{{ scheduled|default:"Your next session" }}</h2>
+    <p>{{ plan.name|default:"Build your routine and track every set." }}</p>
+    <div class="actions">
+      <form method="post" action="/workouts/start/">
+        {% csrf_token %}
+        <input type="hidden" name="name" value="{{ scheduled|default:'Workout' }}">
+        <button>Start session →</button>
+      </form>
+      <a class="subtle-link" href="/workouts/">View training</a>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>Recovery &amp; body</h2>
+    <div class="stat-grid">
+      <div class="stat">
+        <p class="stat-label">Latest weight</p>
+        <p class="stat-value">
+          {% if body and body.weight is not None %}{{ body.weight|floatformat:1 }}<small>kg</small>{% else %}—{% endif %}
+        </p>
+      </div>
+      <div class="stat">
+        <p class="stat-label">Latest sleep</p>
+        <p class="stat-value">
+          {% if sleep and sleep.hours is not None %}{{ sleep.hours|floatformat:1 }}<small>hr</small>{% else %}—{% endif %}
+        </p>
+      </div>
+    </div>
+    {% include "core/muscle_map.html" %}
+    <div class="actions">
+      <a class="button" href="/body/">Add a check-in</a>
+      <a class="subtle-link" href="/body/#sleep">Log sleep</a>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>Your coach</h2>
+    <p>Review your summaries and suggested changes.</p>
+    <div class="actions">
+      <a class="button" href="/coach/">Open coach</a>
+      <form method="post" action="/coach/request/daily/">
+        {% csrf_token %}
+        <button class="secondary">End day</button>
+      </form>
+    </div>
+  </section>
+</div>
+
+<h2>Recent food</h2>
+<div class="food-rows">
+{% for food in foods %}
+  <a class="row" href="/nutrition/{{ food.pk }}/">
+    <span>{{ food.name }}<small>{{ food.recorded_at|date:"j M H:i" }}</small></span>
+    <strong>{{ food.calories|floatformat:0 }} kcal</strong>
+  </a>
+{% empty %}
+  <p class="muted">Start with your first meal — <a href="/nutrition/new/">log food</a>.</p>
+{% endfor %}
+</div>
+
+{% endblock %}

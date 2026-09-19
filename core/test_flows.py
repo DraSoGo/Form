@@ -1,7 +1,7 @@
 """Domain and browser regressions without external services or shared media."""
 import io
 import tempfile
-from datetime import timedelta
+from datetime import timedelta, datetime, time
 from decimal import Decimal
 from pathlib import Path
 
@@ -15,8 +15,8 @@ from django.utils import timezone
 
 from .models import (
     BodyMeasurement, Equipment, Exercise, FoodEntry, FoodLibrary, LoginAttempt,
-    MealTemplate, NutritionTarget, Profile, StepEntry, WorkoutCardio, WorkoutPlan,
-    WorkoutSession, WorkoutSet,
+    MealTemplate, NutritionTarget, Profile, SleepEntry, StepEntry, WorkoutCardio,
+    WorkoutPlan, WorkoutSession, WorkoutSet,
 )
 from .forms import ExerciseForm, StepForm
 from .services import (
@@ -224,12 +224,55 @@ class CoreFlowTests(TestCase):
             create_plan(self.user, self.plan_data())
         self.assertNotContains(self.client.get('/workouts/plan/'), 'Bench press')
 
+    def test_plan_allows_duplicate_schedule_day_names(self):
+        from .services import create_plan
+        data = self.plan_data(schedule_type='fixed',
+                              schedule={'0': 'Push', '1': 'Push', '2': 'Push', '3': 'Push',
+                                        '4': 'Push', '5': 'Push', '6': 'Push'})
+        plan = create_plan(self.user, data)
+        self.assertEqual(plan.schedule['0'], 'Push')
+
+    def test_plan_rest_only_schedule_rejects_exercise_days(self):
+        from .services import create_plan
+        data = self.plan_data(schedule_type='fixed',
+                              schedule={'0': 'Rest', '1': 'Rest', '2': 'Rest', '3': 'Rest',
+                                        '4': 'Rest', '5': 'Rest', '6': 'Rest'})
+        with self.assertRaises(ValidationError):
+            create_plan(self.user, data)
+
+    def test_plan_rejects_day_not_in_schedule(self):
+        from .services import create_plan
+        data = self.plan_data(schedule=['Push', 'Rest'],
+                              exercises=[{'exercise': str(self.exercise.pk), 'day': 'Pull',
+                                          'sets': 3, 'rep_min': 8, 'rep_max': 12, 'rest': 90}])
+        with self.assertRaises(ValidationError):
+            create_plan(self.user, data)
+
+    def test_plan_valid_push_pull_legs_full_week(self):
+        from .services import create_plan
+        row = Exercise.objects.create(user=self.user, name='Row', primary_muscles=['Back'])
+        squat = Exercise.objects.create(user=self.user, name='Squat', primary_muscles=['Quads'])
+        data = self.plan_data(schedule_type='fixed',
+                              schedule={'0': 'Push', '1': 'Pull', '2': 'Legs', '3': 'Rest',
+                                        '4': 'Push', '5': 'Pull', '6': 'Legs'},
+                              exercises=[
+                                  {'exercise': str(self.exercise.pk), 'day': 'Push', 'sets': 3,
+                                   'rep_min': 8, 'rep_max': 12, 'rest': 90},
+                                  {'exercise': str(row.pk), 'day': 'Pull', 'sets': 4,
+                                   'rep_min': 8, 'rep_max': 12, 'rest': 120},
+                                  {'exercise': str(squat.pk), 'day': 'Legs', 'sets': 5,
+                                   'rep_min': 5, 'rep_max': 8, 'rest': 180},
+                              ])
+        plan = create_plan(self.user, data)
+        self.assertEqual(len(plan.exercises), 3)
+        self.assertEqual({e['day'] for e in plan.exercises}, {'Push', 'Pull', 'Legs'})
+
     def test_steps_replace_body_cardio_and_legacy_cardio_moves_to_training(self):
         from .models import CardioEntry, StepEntry
         legacy = CardioEntry.objects.create(user=self.user, kind='Run', minutes=20)
         step = StepEntry.objects.create(user=self.user, steps=8500)
         body = self.client.get('/body/')
-        self.assertContains(body, '+ Steps')
+        self.assertContains(body, 'id="steps"')
         self.assertContains(body, '8500')
         self.assertNotContains(body, '+ Cardio')
         training = self.client.get('/workouts/')
@@ -444,7 +487,152 @@ class CoreFlowTests(TestCase):
         response = self.client.get('/')
         self.assertContains(
             response,
-            '<div class="actions"><a class="button" href="/nutrition/new/">+ Log food</a><a href="/targets/">Set targets</a></div>',
+            '<div class="actions"><a class="button" href="/nutrition/new/">+ Log food</a><a class="subtle-link" href="/targets/">Set targets</a></div>',
             html=True,
         )
-        self.assertContains(response, '<div class="actions"><a class="button" href="/coach/">Open coach</a>', html=False)
+        self.assertContains(response, '<a class="button" href="/coach/">Open coach</a>', html=False)
+
+    def test_trends_summary_cards(self):
+        now = timezone.now()
+        WorkoutSession.objects.create(user=self.user, name='A', started_at=now - timedelta(days=2))
+        WorkoutSession.objects.create(user=self.user, name='B', started_at=now - timedelta(days=1), finished_at=now)
+        FoodEntry.objects.create(user=self.user, name='M1', calories=1000, recorded_at=now - timedelta(days=5))
+        FoodEntry.objects.create(user=self.user, name='M2', calories=1500, recorded_at=now - timedelta(days=3))
+        FoodEntry.objects.create(user=self.user, name='M3', calories=2000, recorded_at=now - timedelta(days=1))
+        SleepEntry.objects.create(user=self.user, date=(now - timedelta(days=2)).date(), hours=Decimal('7'))
+        SleepEntry.objects.create(user=self.user, date=(now - timedelta(days=1)).date(), hours=Decimal('8'))
+        BodyMeasurement.objects.create(user=self.user, weight=70, recorded_at=now - timedelta(days=4))
+        BodyMeasurement.objects.create(user=self.user, weight=71, recorded_at=now - timedelta(days=2))
+        BodyMeasurement.objects.create(user=self.user, weight=72, recorded_at=now - timedelta(days=1))
+
+        response = self.client.get('/trends/?days=7')
+        self.assertEqual(response.status_code, 200)
+        summaries = response.context['summaries']
+        self.assertEqual(len(summaries), 4)
+        self.assertEqual([s['label'] for s in summaries], ['Workouts', 'Avg calories', 'Avg sleep', 'Weight change'])
+        self.assertEqual(summaries[0]['value'], 2)
+        self.assertEqual(summaries[0]['sub'], '2.0 per week')
+        self.assertEqual(summaries[1]['value'], '1500 kcal')
+        self.assertEqual(summaries[1]['sub'], '3 of 7 days logged')
+        self.assertEqual(summaries[2]['value'], '7.5 h')
+        self.assertEqual(summaries[2]['sub'], '2 nights recorded')
+        self.assertEqual(summaries[3]['value'], '+2.0 kg')
+        self.assertEqual(summaries[3]['sub'], '3 weigh-ins')
+
+        empty = get_user_model().objects.create_user('empty')
+        self.client.force_login(empty)
+        response = self.client.get('/trends/?days=7')
+        self.assertEqual(response.status_code, 200)
+        summaries = response.context['summaries']
+        self.assertEqual(len(summaries), 4)
+        self.assertEqual(summaries[0]['value'], 0)
+        self.assertEqual(summaries[0]['sub'], 'No sessions in this period')
+        self.assertEqual(summaries[1]['value'], '—')
+        self.assertEqual(summaries[1]['sub'], 'No food logged')
+        self.assertEqual(summaries[2]['value'], '—')
+        self.assertEqual(summaries[2]['sub'], '0 nights recorded')
+        self.assertEqual(summaries[3]['value'], '—')
+        self.assertEqual(summaries[3]['sub'], 'Add weigh-ins to see change')
+
+    def test_nutrition_defaults_to_today_and_filters_by_date(self):
+        yesterday = timezone.localdate() - timedelta(days=1)
+        y_start = timezone.make_aware(datetime.combine(yesterday, time.min))
+        FoodEntry.objects.create(
+            user=self.user, name='Yesterday meal', calories=300,
+            protein=20, carbs=30, fat=10, fiber=2,
+            recorded_at=y_start + timedelta(hours=12),
+        )
+        FoodEntry.objects.create(
+            user=self.user, name='Today meal', calories=500,
+            protein=40, carbs=60, fat=10, fiber=4,
+        )
+        response = self.client.get('/nutrition/')
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.context['selected_date'], timezone.localdate())
+        foods = list(response.context['foods'])
+        self.assertEqual([f.name for f in foods], ['Today meal'])
+        self.assertEqual(response.context['totals']['calories'], 500)
+
+        response = self.client.get(f'/nutrition/?date={yesterday.isoformat()}')
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.context['selected_date'], yesterday)
+        foods = list(response.context['foods'])
+        self.assertEqual([f.name for f in foods], ['Yesterday meal'])
+        self.assertEqual(response.context['totals']['calories'], 300)
+
+        response = self.client.get('/nutrition/?date=invalid')
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.context['selected_date'], timezone.localdate())
+        foods = list(response.context['foods'])
+        self.assertEqual([f.name for f in foods], ['Today meal'])
+
+    def test_nutrition_filters_by_status_and_ignores_invalid_status(self):
+        FoodEntry.objects.create(
+            user=self.user, name='Manual entry', calories=200, state='manual',
+        )
+        FoodEntry.objects.create(
+            user=self.user, name='AI entry', calories=300, state='ai_estimated',
+        )
+        response = self.client.get('/nutrition/?status=ai_estimated')
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.context['active_status'], 'ai_estimated')
+        foods = list(response.context['foods'])
+        self.assertEqual(len(foods), 1)
+        self.assertEqual(foods[0].name, 'AI entry')
+
+        response = self.client.get('/nutrition/?status=bogus')
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.context['active_status'], '')
+        self.assertEqual(len(list(response.context['foods'])), 2)
+
+    def test_body_base_form_saves_without_advanced_fields(self):
+        payload = {
+            'recorded_at': timezone.localtime().strftime('%Y-%m-%dT%H:%M'),
+            'source': 'manual',
+            'weight': '80',
+            'body_fat': '20',
+        }
+        self.assertEqual(self.client.post('/body/', payload).status_code, 302)
+        measurement = BodyMeasurement.objects.get()
+        self.assertEqual((measurement.weight, measurement.body_fat), (Decimal('80'), Decimal('20')))
+        self.assertIsNone(measurement.muscle)
+        self.assertIsNone(measurement.bmr)
+
+    def test_body_advanced_form_saves_advanced_fields(self):
+        payload = {
+            'recorded_at': timezone.localtime().strftime('%Y-%m-%dT%H:%M'),
+            'source': 'manual',
+            'weight': '80',
+            'body_fat': '20',
+            'advanced': '1',
+            'muscle': '40.5',
+            'bmr': '1600',
+        }
+        self.assertEqual(self.client.post('/body/', payload).status_code, 302)
+        measurement = BodyMeasurement.objects.get()
+        self.assertEqual(measurement.muscle, Decimal('40.5'))
+        self.assertEqual(measurement.bmr, Decimal('1600'))
+
+    def test_body_edit_uses_advanced_form(self):
+        measurement = BodyMeasurement.objects.create(
+            user=self.user, weight=80, body_fat=20, muscle=40.5, bmr=1600,
+        )
+        response = self.client.get(f'/edit/body/{measurement.pk}/')
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'Muscle')
+
+    def test_body_context_latest_summary(self):
+        first = BodyMeasurement.objects.create(
+            user=self.user, weight=80, body_fat=20,
+            recorded_at=timezone.now() - timedelta(hours=2),
+        )
+        second = BodyMeasurement.objects.create(
+            user=self.user, weight=79, body_fat=19,
+            recorded_at=timezone.now(),
+        )
+        response = self.client.get('/body/')
+        self.assertEqual(response.status_code, 200)
+        latest = response.context['latest']
+        self.assertEqual(latest['weight'], second.weight)
+        self.assertEqual(latest['body_fat'], second.body_fat)
+        self.assertEqual(latest['source'], second.source)

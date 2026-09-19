@@ -84,8 +84,16 @@ def create_plan(user, data, reason="", expected_version=None):
             raise ValidationError("Rotation must be a list of day names.")
     else:
         raise ValidationError("Choose fixed or rotation.")
+    # Final safety check: every exercise day must exist in the schedule.
+    scheduled_names = set(schedule.values()) if isinstance(schedule, dict) else set(schedule)
+    scheduled_names.discard("Rest")
+    if not scheduled_names:
+        raise ValidationError("Add at least one workout day to the schedule, other than Rest.")
     if not isinstance(exercises, list) or len(exercises) > 100:
         raise ValidationError("Invalid exercise list")
+    for item in exercises:
+        if isinstance(item, dict) and item.get("day") not in scheduled_names:
+            raise ValidationError("Each exercise needs a workout day from your schedule, other than Rest.")
     for item in exercises:
         if not isinstance(item, dict):
             raise ValidationError("Invalid exercise")

@@ -8,7 +8,6 @@ __pycache__/
 *.sqlite3
 .pytest_cache/
 /media/
-/data/
 staticfiles/
 .superpowers/
 test-results/
