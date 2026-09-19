@@ -17,6 +17,7 @@ from .models import *
 from .forms import *
 from .services import *
 from .archive import export_archive, validate_archive, import_archive, export_csv
+from .muscles import muscle_summary, region_states
 
 
 def health(request):
@@ -56,6 +57,10 @@ def dashboard(request):
                 "percent": min(100, round(totals[name] / goal * 100)) if goal else 0,
             }
         )
+    muscle_groups = [
+        {"key": muscle, **muscle_summary(request.user, muscle)}
+        for muscle in ["chest", "back", "shoulders", "biceps", "triceps", "abs", "glutes", "quads", "hamstrings", "calves"]
+    ]
     return render(
         request,
         "core/dashboard.html",
@@ -68,6 +73,8 @@ def dashboard(request):
             "sleep": SleepEntry.objects.filter(user=request.user).first(),
             "scheduled": scheduled,
             "plan": plan,
+            "muscle_regions": region_states(request.user, 7),
+            "muscle_groups": muscle_groups,
             "foods": FoodEntry.objects.filter(
                 user=request.user, recorded_at__gte=start
             )[:5],
@@ -361,17 +368,90 @@ def targets(request):
 
 def workouts(request):
     plan = active_plan(request.user)
+    plan_days = []
+    if plan:
+        if plan.schedule_type == "fixed":
+            day_names = []
+            seen = set()
+            for weekday in range(7):
+                name = plan.schedule.get(str(weekday))
+                if name and name not in seen:
+                    day_names.append(name)
+                    seen.add(name)
+        else:
+            day_names = list(plan.schedule)
+        today = timezone.localdate()
+        if plan.schedule_type == "fixed":
+            scheduled = plan.schedule.get(str(today.weekday()), "Rest")
+        else:
+            completed = WorkoutSession.objects.filter(
+                user=request.user, plan=plan, finished_at__isnull=False
+            ).count()
+            scheduled = plan.schedule[completed % len(plan.schedule)]
+        exercise_ids = {
+            item.get("exercise") for item in plan.exercises if item.get("exercise")
+        }
+        names_by_pk = {
+            str(ex.pk): ex.name
+            for ex in Exercise.objects.filter(user=request.user, pk__in=exercise_ids)
+        }
+        single_day = len(day_names) == 1
+        for day_name in day_names:
+            if single_day:
+                items = [
+                    item for item in plan.exercises
+                    if item.get("day", day_name) == day_name
+                ]
+            else:
+                items = [
+                    item for item in plan.exercises
+                    if item.get("day") == day_name
+                ]
+            total_sets = 0
+            duration = 0
+            first_exercises = []
+            for item in items:
+                is_cardio = "minutes" in item
+                if is_cardio:
+                    total_sets += 1
+                    sets = None
+                    duration += item.get("minutes", 20)
+                else:
+                    sets = item.get("sets", 3)
+                    total_sets += sets
+                    duration += sets * 3
+                if len(first_exercises) < 3:
+                    name = names_by_pk.get(str(item.get("exercise")))
+                    if name:
+                        first_exercises.append({"name": name, "sets": sets})
+            # ponytail: duration is a crude per-exercise estimate; refine with logged times
+            plan_days.append({
+                "name": day_name,
+                "sets": total_sets,
+                "duration": round(duration / 5) * 5,
+                "exercise_count": len(items),
+                "first_exercises": first_exercises,
+                "more": max(0, len(items) - 3),
+                "today": day_name == scheduled,
+            })
+    muscle_groups = [
+        {"key": muscle, **muscle_summary(request.user, muscle)}
+        for muscle in ["chest", "back", "shoulders", "biceps", "triceps", "abs", "glutes", "quads", "hamstrings", "calves"]
+    ]
     return render(
         request,
         "core/workouts.html",
         {
             "plan": plan,
+            "plan_days": plan_days,
             "plans": WorkoutPlan.objects.filter(user=request.user)[:10],
             "sessions": WorkoutSession.objects.filter(user=request.user)[:30],
             "exercises": Exercise.objects.filter(user=request.user, archived=False),
             "archived_exercises": Exercise.objects.filter(user=request.user, archived=True),
             "legacy_cardio": CardioEntry.objects.filter(user=request.user)[:30],
             "volume": weekly_volume(request.user),
+            "muscle_regions": region_states(request.user, 7),
+            "muscle_groups": muscle_groups,
         },
     )
 

@@ -444,7 +444,7 @@ class CoreFlowTests(TestCase):
         response = self.client.get('/')
         self.assertContains(
             response,
-            '<div class="actions"><a class="button" href="/nutrition/new/">+ Log food</a><a href="/targets/">Set targets</a></div>',
+            '<div class="actions"><a class="button" href="/nutrition/new/">+ Log food</a><a class="subtle-link" href="/targets/">Set targets</a></div>',
             html=True,
         )
-        self.assertContains(response, '<div class="actions"><a class="button" href="/coach/">Open coach</a>', html=False)
+        self.assertContains(response, '<a class="button" href="/coach/">Open coach</a>', html=False)
