@@ -1341,6 +1341,163 @@ nav a[aria-current="page"]::after {
 }
 
 /* =========================================================================
+   Segmented control (date range, shared with .muscle-toggle pattern)
+   ========================================================================= */
+.seg {
+  display: inline-flex;
+  background: var(--canvas);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+  padding: 3px;
+  gap: 2px;
+  margin: 14px 0;
+}
+.seg-btn {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  min-height: 36px;
+  padding: 0 16px;
+  border-radius: var(--radius-pill);
+  font: inherit;
+  font-weight: 650;
+  font-size: 13px;
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: background .15s ease, color .15s ease, box-shadow .15s ease;
+}
+.seg-btn:hover { color: var(--ink); text-decoration: none; }
+.seg-btn.is-active,
+.seg-btn[aria-current="page"] {
+  background: var(--surface);
+  color: var(--ink);
+  box-shadow: 0 0 0 1px var(--border);
+}
+
+/* =========================================================================
+   Summary cards (Trends page — 4-up grid)
+   ========================================================================= */
+.summary-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin: 14px 0 18px;
+}
+@media (min-width: 720px) {
+  .summary-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+}
+.summary-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 14px 16px;
+  min-width: 0;
+}
+.summary-label {
+  margin: 0 0 6px;
+  font-size: 11px;
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+  font-weight: 700;
+  color: var(--muted);
+}
+.summary-value {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: clamp(22px, 3vw, 30px);
+  font-weight: 700;
+  letter-spacing: -.5px;
+  line-height: 1.05;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+.summary-sub {
+  margin: 6px 0 0;
+  font-size: 12.5px;
+  color: var(--muted);
+}
+
+/* =========================================================================
+   Coach page (coaching/templates/coaching/home.html)
+   ========================================================================= */
+
+/* Compact row of day-review buttons */
+.coach-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.coach-actions > form { margin: 0; }
+.coach-actions button {
+  background: var(--surface);
+  color: var(--ink);
+  border: 1px solid var(--border);
+}
+.coach-actions button:hover {
+  background: var(--highlight);
+  border-color: var(--primary);
+}
+
+/* Suggested changes — compact article styling */
+.suggestion {
+  border-top: 1px solid var(--border);
+  padding: 14px 0;
+}
+.suggestion:first-child { border-top: 0; padding-top: 4px; }
+.suggestion h3 {
+  font-size: 16px;
+  margin: 0 0 6px;
+}
+.suggestion p { margin: 0 0 8px; line-height: 1.5; }
+.suggestion pre {
+  margin: 6px 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.suggestion .action-form { margin-top: 8px; }
+.suggestion > small {
+  display: block;
+  margin-top: 6px;
+  font-size: 12px;
+}
+
+/* Analysis history articles */
+.analysis {
+  border-top: 1px solid var(--border);
+  padding: 14px 0;
+}
+.analysis:first-child { border-top: 0; padding-top: 4px; }
+.analysis h3 {
+  font-size: 16px;
+  margin: 0 0 8px;
+}
+.analysis p { margin: 0 0 6px; line-height: 1.55; }
+.analysis a { font-size: 14px; font-weight: 600; }
+.analysis-details {
+  margin-top: 8px;
+  font-size: 12.5px;
+}
+.analysis-details summary {
+  font-size: 13px;
+  font-weight: 650;
+  padding: 4px 0;
+  min-height: 28px;
+}
+
+/* Technical details — collapsed diagnostics block */
+.job {
+  border-top: 1px solid var(--border);
+  padding: 12px 0;
+}
+.job:first-child { border-top: 0; padding-top: 4px; }
+.job p { margin: 0 0 6px; line-height: 1.5; font-size: 14px; }
+.job small { display: block; font-size: 12px; margin-top: 2px; }
+.job form { margin-top: 8px; }
+
+/* =========================================================================
    Food diary (nutrition.html)
    ========================================================================= */
 

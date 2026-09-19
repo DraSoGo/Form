@@ -130,7 +130,7 @@ class CoachingTests(TestCase):
     def test_coach_action_controls_use_spaced_groups(self):
         self.client.force_login(self.user)
         response=self.client.get('/coach/')
-        self.assertContains(response,'<div class="actions"><form class="action-form"',html=False)
+        self.assertContains(response,'<div class="coach-actions">',html=False)
     @patch('coaching.services.route')
     def test_photo_analysis_editable_and_changed_entry_protected(self,mock):
         from PIL import Image
