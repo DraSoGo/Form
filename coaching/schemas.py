@@ -55,6 +55,40 @@ class NutritionEstimateV2(Strict):
     ingredients: list[IngredientEstimate] = Field(min_length=1, max_length=15)
     confidence: Literal['low', 'medium', 'high']
     uncertainty_factors_thai: list[str] = Field(default_factory=list, max_length=6)
+
+
+class FoodItem(Strict):
+    ref_key: str
+    name_th: str = ""
+    weight_g: float = Field(ge=0, le=2000)
+    min_g: float = Field(ge=0, le=2000)
+    max_g: float = Field(ge=0, le=2000)
+    user_confirmed: bool = False
+    fraction_consumed: float = Field(default=1.0, ge=0, le=1)
+
+    @model_validator(mode='after')
+    def ref_key_known(self):
+        from core.nutrition_ref import REFERENCE
+        if self.ref_key not in REFERENCE:
+            raise ValueError(f"Unknown ref_key: {self.ref_key}")
+        return self
+
+
+class UnmatchedFood(Strict):
+    name_th: str
+    estimated_share: Literal['major', 'minor']
+    note: str = ""
+
+
+class NutritionEstimateV3(Strict):
+    dish_name_th: str
+    cuisine: str = ""
+    strategy: Literal['whole_dish', 'components', 'hybrid']
+    items: list[FoodItem] = Field(min_length=1, max_length=15)
+    unmatched: list[UnmatchedFood] = Field(default_factory=list, max_length=6)
+    confidence: Literal['low', 'medium', 'high']
+    completeness: Literal['complete', 'incomplete'] = 'complete'
+    uncertainty_factors_thai: list[str] = Field(default_factory=list, max_length=6)
 class DailySummary(Strict):
     summary: Text
     highlights: list[Text] = Field(default_factory=list,max_length=8)
@@ -67,4 +101,4 @@ class ExerciseMetadata(Strict):
     primary_muscles: list[Annotated[str, Field(min_length=1,max_length=79)]] = Field(min_length=1,max_length=10)
     secondary_muscles: list[Annotated[str, Field(min_length=1,max_length=79)]] = Field(default_factory=list,max_length=10)
     classification: Literal['compound','isolation']
-SCHEMAS = dict(food=NutritionEstimateV2, daily=DailySummary, workout=WorkoutAnalysis,body=BodyTrendAnalysis,chat=ChatAnswer,exercise=ExerciseMetadata)
+SCHEMAS = dict(food=NutritionEstimateV3, daily=DailySummary, workout=WorkoutAnalysis,body=BodyTrendAnalysis,chat=ChatAnswer,exercise=ExerciseMetadata)

@@ -26,7 +26,7 @@ from .push import validate_subscription
 from .validation import validate_change
 
 SUMMARY={'summary':'Stable recent progress.','highlights':['Protein logged consistently.'],'suggestions':[]}
-FOOD={'ingredients':[{'ref_key':'cooked_white_rice','name_th':'ข้าวสวย','weight_g':175,'min_g':150,'max_g':200,'user_confirmed':False}],'confidence':'medium','uncertainty_factors_thai':['ส่วนหนึ่งประมาณจากภาพ']}
+FOOD={'dish_name_th':'ข้าวสวย','cuisine':'Thai','strategy':'components','items':[{'ref_key':'cooked_white_rice','name_th':'ข้าวสวย','weight_g':175,'min_g':150,'max_g':200,'user_confirmed':False,'fraction_consumed':1.0}],'unmatched':[],'confidence':'medium','completeness':'complete','uncertainty_factors_thai':['ส่วนหนึ่งประมาณจากภาพ']}
 EXERCISE={'aliases':['DB bench press'],'primary_muscles':['Chest'],'secondary_muscles':['Triceps'],'classification':'compound'}
 @override_settings(STORAGES={'staticfiles':{'BACKEND':'django.contrib.staticfiles.storage.StaticFilesStorage'}},ALLOWED_HOSTS=['testserver'])
 class CoachingTests(TestCase):
@@ -197,10 +197,15 @@ class CoachingTests(TestCase):
         for muscle in MUSCLES:
             self.assertEqual(normalize(muscle),muscle)
 
-    def _food_v2(self, ingredients, confidence='medium', factors=None):
+    def _food_v3(self, items, confidence='medium', factors=None, dish_name='อาหาร', cuisine='Thai', strategy='components', unmatched=None, completeness='complete'):
         return {
-            'ingredients': ingredients,
+            'dish_name_th': dish_name,
+            'cuisine': cuisine,
+            'strategy': strategy,
+            'items': items,
+            'unmatched': unmatched or [],
             'confidence': confidence,
+            'completeness': completeness,
             'uncertainty_factors_thai': factors or [],
         }
 
@@ -223,7 +228,7 @@ class CoachingTests(TestCase):
 
     def test_fried_chicken_sticky_rice_breakdown(self):
         entry = FoodEntry.objects.create(user=self.user, name='Photo', note='ข้าวเหนียวไก่ทอด')
-        result = self._food_v2([
+        result = self._food_v3([
             {'ref_key': 'sticky_rice_cooked', 'name_th': 'ข้าวเหนียว', 'weight_g': 170, 'min_g': 150, 'max_g': 190, 'user_confirmed': False},
             {'ref_key': 'fried_chicken_battered', 'name_th': 'ไก่ทอด', 'weight_g': 180, 'min_g': 160, 'max_g': 200, 'user_confirmed': False},
             {'ref_key': 'fried_shallots', 'name_th': 'หอมเจียว', 'weight_g': 25, 'min_g': 20, 'max_g': 30, 'user_confirmed': False},
@@ -236,13 +241,13 @@ class CoachingTests(TestCase):
         self.assertGreaterEqual(float(entry.protein), 30)
         self.assertLessEqual(float(entry.protein), 55)
         self.assertIsNotNone(entry.ai_breakdown)
-        ref_keys = [i['ref_key'] for i in entry.ai_breakdown['ingredients']]
+        ref_keys = [i['ref_key'] for i in entry.ai_breakdown['items']]
         self.assertNotIn('cooking_oil', ref_keys)
         self.assertIn('range_kcal', entry.ai_breakdown)
 
     def test_basil_pork_century_egg_breakdown(self):
         entry = FoodEntry.objects.create(user=self.user, name='Photo', note='ข้าวราดหน้า')
-        result = self._food_v2([
+        result = self._food_v3([
             {'ref_key': 'cooked_white_rice', 'name_th': 'ข้าวสวย', 'weight_g': 200, 'min_g': 180, 'max_g': 220, 'user_confirmed': False},
             {'ref_key': 'pork_minced_cooked_stirfry', 'name_th': 'หมูสับผัด', 'weight_g': 140, 'min_g': 120, 'max_g': 160, 'user_confirmed': False},
             {'ref_key': 'century_egg', 'name_th': 'ไข่เยี่ยวม้า', 'weight_g': 60, 'min_g': 50, 'max_g': 70, 'user_confirmed': False},
@@ -256,28 +261,28 @@ class CoachingTests(TestCase):
 
     def test_user_confirmed_weight_respected(self):
         entry = FoodEntry.objects.create(user=self.user, name='Photo', note='ข้าวสุก 150 กรัม')
-        result = self._food_v2([
+        result = self._food_v3([
             {'ref_key': 'cooked_white_rice', 'name_th': 'ข้าวสวย', 'weight_g': 150, 'min_g': 150, 'max_g': 150, 'user_confirmed': True},
         ])
         entry = self._run_food_job(entry, result)
-        self.assertEqual(entry.ai_breakdown['ingredients'][0]['user_confirmed'], True)
-        self.assertEqual(entry.ai_breakdown['ingredients'][0]['weight_g'], 150)
+        self.assertEqual(entry.ai_breakdown['items'][0]['user_confirmed'], True)
+        self.assertEqual(entry.ai_breakdown['items'][0]['weight_g'], 150)
         self.assertAlmostEqual(float(entry.calories), 195, delta=5)
 
     def test_ambiguous_weight_not_confirmed(self):
         entry = FoodEntry.objects.create(user=self.user, name='Photo', note='ไก่ประมาณ 300 กรัม')
-        result = self._food_v2([
+        result = self._food_v3([
             {'ref_key': 'fried_chicken_battered', 'name_th': 'ไก่ทอด', 'weight_g': 300, 'min_g': 200, 'max_g': 400, 'user_confirmed': False},
         ], factors=['น้ำหนักไก่อาจรวมกระดูก'])
         entry = self._run_food_job(entry, result)
-        ing = entry.ai_breakdown['ingredients'][0]
+        ing = entry.ai_breakdown['items'][0]
         self.assertFalse(ing['user_confirmed'])
         self.assertGreater(ing['max_g'] - ing['min_g'], 50)
         self.assertIn('น้ำหนักไก่อาจรวมกระดูก', entry.uncertainty)
 
     def test_bone_in_weight_is_not_edible(self):
         entry = FoodEntry.objects.create(user=self.user, name='Photo', note='ไก่ทอดชิ้นใหญ่')
-        result = self._food_v2([
+        result = self._food_v3([
             {'ref_key': 'fried_chicken_battered', 'name_th': 'ไก่ทอด', 'weight_g': 300, 'min_g': 250, 'max_g': 350, 'user_confirmed': False},
         ], factors=['น้ำหนักรวมกระดูก'])
         entry = self._run_food_job(entry, result)
@@ -286,7 +291,7 @@ class CoachingTests(TestCase):
 
     def test_sodium_unit_is_mg(self):
         entry = FoodEntry.objects.create(user=self.user, name='Photo', note='น้ำจิ้ม')
-        result = self._food_v2([
+        result = self._food_v3([
             {'ref_key': 'sweet_chili_dipping_sauce', 'name_th': 'น้ำจิ้มไก่', 'weight_g': 100, 'min_g': 100, 'max_g': 100, 'user_confirmed': True},
         ])
         entry = self._run_food_job(entry, result)
@@ -295,7 +300,7 @@ class CoachingTests(TestCase):
 
     def test_missing_sugar_sodium_stay_unknown(self):
         entry = FoodEntry.objects.create(user=self.user, name='Photo', note='ข้าว')
-        result = self._food_v2([
+        result = self._food_v3([
             {'ref_key': 'cooked_white_rice', 'name_th': 'ข้าวสวย', 'weight_g': 150, 'min_g': 150, 'max_g': 150, 'user_confirmed': True},
         ])
         entry = self._run_food_job(entry, result)
@@ -319,10 +324,10 @@ class CoachingTests(TestCase):
 
     def test_validation_retry_once(self):
         entry = FoodEntry.objects.create(user=self.user, name='Photo', note='ข้าว')
-        valid = self._food_v2([
+        valid = self._food_v3([
             {'ref_key': 'cooked_white_rice', 'name_th': 'ข้าวสวย', 'weight_g': 150, 'min_g': 150, 'max_g': 150, 'user_confirmed': True},
         ])
-        invalid = self._food_v2([
+        invalid = self._food_v3([
             {'ref_key': 'cooking_oil', 'name_th': 'น้ำมัน', 'weight_g': 1500, 'min_g': 1500, 'max_g': 1500, 'user_confirmed': False},
         ])
         from PIL import Image
@@ -340,7 +345,7 @@ class CoachingTests(TestCase):
 
     def test_validation_retry_fails_after_second_invalid(self):
         entry = FoodEntry.objects.create(user=self.user, name='Photo', note='ข้าว')
-        invalid = self._food_v2([
+        invalid = self._food_v3([
             {'ref_key': 'cooking_oil', 'name_th': 'น้ำมัน', 'weight_g': 1500, 'min_g': 1500, 'max_g': 1500, 'user_confirmed': False},
         ])
         from PIL import Image
@@ -359,7 +364,7 @@ class CoachingTests(TestCase):
     def test_user_corrected_entry_not_overwritten(self):
         from PIL import Image
         entry = FoodEntry.objects.create(user=self.user, name='Photo', calories=500, protein=20, carbs=60, fat=10, state='user_corrected')
-        result = self._food_v2([
+        result = self._food_v3([
             {'ref_key': 'cooked_white_rice', 'name_th': 'ข้าวสวย', 'weight_g': 150, 'min_g': 150, 'max_g': 150, 'user_confirmed': True},
         ])
         with tempfile.TemporaryDirectory() as root, override_settings(MEDIA_ROOT=root):
@@ -395,7 +400,7 @@ class CoachingTests(TestCase):
     def test_prompt_contains_reference_table_and_bone_instruction(self):
         from PIL import Image
         entry = FoodEntry.objects.create(user=self.user, name='Photo', note='ข้าวไก่')
-        result = self._food_v2([
+        result = self._food_v3([
             {'ref_key': 'cooked_white_rice', 'name_th': 'ข้าวสวย', 'weight_g': 150, 'min_g': 150, 'max_g': 150, 'user_confirmed': True},
         ])
         with tempfile.TemporaryDirectory() as root, override_settings(MEDIA_ROOT=root):
@@ -416,7 +421,7 @@ class CoachingTests(TestCase):
         entry = FoodEntry.objects.create(user=self.user, name='Photo', note='ข้าว')
         old_job = Job.objects.create(user=self.user, task='food', status='done', payload={'entry': str(entry.pk)})
         Analysis.objects.create(user=self.user, job=old_job, task='food', local_date=timezone.now().date(), version=1, content={'old': True})
-        result = self._food_v2([
+        result = self._food_v3([
             {'ref_key': 'cooked_white_rice', 'name_th': 'ข้าวสวย', 'weight_g': 150, 'min_g': 150, 'max_g': 150, 'user_confirmed': True},
         ])
         with tempfile.TemporaryDirectory() as root, override_settings(MEDIA_ROOT=root):

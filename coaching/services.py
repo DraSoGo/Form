@@ -14,7 +14,7 @@ from .context import build_context,local_now
 from .models import Job,Analysis,Suggestion
 from .providers import ProviderError
 from .router import route
-from .schemas import NutritionEstimateV2
+from .schemas import NutritionEstimateV3
 from .triggers import evaluate
 from .push import notify
 from .validation import validate_change
@@ -57,7 +57,17 @@ def enqueue_exercise(user,exercise):
 
 def _food_prompt(note):
     instructions = (
-        "Identify each visible/note-mentioned food component. Choose ref_key ONLY from this table:\n"
+        "You are estimating nutrition from a photo and/or user note. "
+        "First identify the whole dish (dish_name_th, cuisine). Then choose ONE strategy:\n"
+        "- whole_dish: a suitable [dish] reference exists for the whole meal → 1-2 items using dish refs, weight = estimated total dish weight.\n"
+        "- components: clearly separate components (rice + protein + sauce) → one item each.\n"
+        "- hybrid: dish baseline + separate items ONLY for additions not in the dish reference (no double-counting oil/sauce/egg/rice already included).\n\n"
+        "Portion hierarchy: user-confirmed grams > visual estimate > typical serving. "
+        "Support fraction_consumed (e.g. 'กินครึ่งหนึ่ง' → 0.5).\n\n"
+        "CRITICAL: if you can see or reasonably infer a MAJOR caloric component (noodles, rice, bread, meat, egg, sauce, broth) that has no suitable reference key, "
+        "list it in unmatched[] with estimated_share='major' — NEVER silently omit it and NEVER substitute an unrelated reference (e.g. don't use curry for cake). "
+        "Minor garnishes → unmatched with 'minor' is fine.\n\n"
+        "Choose ref_key ONLY from this table:\n"
         + table_for_prompt()
         + "\n\n"
         "Estimate EDIBLE portion grams (exclude bones, container, packaging; fried entries already include skin/batter/oil — do NOT add cooking_oil for them; add cooking_oil only for plainly-oily stir-fries not covered by a prepared entry). "
@@ -68,20 +78,31 @@ def _food_prompt(note):
 
 
 def _resolve_estimate(result):
-    """Convert a V2 route result into computed meal data and validation flags."""
-    estimate = NutritionEstimateV2.model_validate(result)
-    ingredients = [
+    """Convert a V3 route result into computed meal data and validation flags."""
+    estimate = NutritionEstimateV3.model_validate(result)
+    items = [
         {
-            "ref_key": ing.ref_key,
-            "name_th": ing.name_th,
-            "weight_g": ing.weight_g,
-            "min_g": ing.min_g,
-            "max_g": ing.max_g,
-            "user_confirmed": ing.user_confirmed,
+            "ref_key": item.ref_key,
+            "name_th": item.name_th,
+            "weight_g": item.weight_g,
+            "min_g": item.min_g,
+            "max_g": item.max_g,
+            "fraction_consumed": item.fraction_consumed,
+            "user_confirmed": item.user_confirmed,
         }
-        for ing in estimate.ingredients
+        for item in estimate.items
     ]
-    computed = compute_meal(ingredients)
+    unmatched = [
+        {"name_th": u.name_th, "estimated_share": u.estimated_share, "note": u.note}
+        for u in estimate.unmatched
+    ]
+    computed = compute_meal(
+        items,
+        dish_name=estimate.dish_name_th,
+        strategy=estimate.strategy,
+        unmatched=unmatched,
+        completeness=estimate.completeness,
+    )
     flags = validate_meal(computed)
     return estimate, computed, flags
 
@@ -160,6 +181,8 @@ def run_job(job):
         result,provider,model=route(job.task,context,prompt,image,job=job)
 
         # Food jobs: resolve ingredients, compute deterministically, and retry once on validation issues.
+        # Incompleteness (major unmatched components) is NOT a hard failure:
+        # the result is saved flagged INCOMPLETE so the user can fix it in the UI.
         food_estimate = food_computed = validation_flags = None
         if job.task == 'food':
             food_estimate, food_computed, validation_flags = _resolve_estimate(result)
@@ -182,6 +205,7 @@ def run_job(job):
                 totals = food_computed['totals']
                 range_kcal = food_computed['range_kcal']
                 unknown_fields = food_computed['unknown_fields']
+                complete = food_computed['complete']
 
                 # Only overwrite entry nutrient fields when the user has not manually corrected/confirmed them.
                 if entry.state in ('manual', 'ai_estimated'):
@@ -191,23 +215,33 @@ def run_job(job):
                         if value is not None:
                             value = Decimal(str(round(float(value), 2)))
                         setattr(entry, dst, value)
-                    entry.name = ', '.join(ing.name_th or ing.ref_key for ing in food_estimate.ingredients)[:160]
-                    entry.quantity = '; '.join(f"{ing.weight_g:.0f}g" for ing in food_estimate.ingredients)[:120]
+                    entry.name = food_estimate.dish_name_th[:160]
+                    item_desc = '; '.join(
+                        f"{item.name_th or item.ref_key} {item.weight_g:.0f}g"
+                        for item in food_estimate.items
+                    )[:120]
+                    entry.quantity = item_desc
                     entry.state = 'ai_estimated'
 
+                uncertainty_prefix = "INCOMPLETE — " if not complete else ""
                 entry.uncertainty = (
-                    f"{food_estimate.confidence} confidence; "
+                    f"{uncertainty_prefix}{food_estimate.confidence} confidence; "
                     f"{range_kcal[0]:.0f}-{range_kcal[1]:.0f} kcal (ingredient-based). "
                     + '; '.join(food_estimate.uncertainty_factors_thai)
                 ).strip()
 
                 entry.ai_breakdown = {
-                    "schema": 1,
-                    "ingredients": food_computed['ingredients'],
+                    "schema": 2,
+                    "dish_name": food_estimate.dish_name_th,
+                    "cuisine": food_estimate.cuisine,
+                    "strategy": food_estimate.strategy,
+                    "items": food_computed['ingredients'],
+                    "unmatched": food_computed['unmatched'],
                     "totals": totals,
                     "range_kcal": range_kcal,
                     "unknown_fields": unknown_fields,
                     "confidence": food_estimate.confidence,
+                    "completeness": food_estimate.completeness if complete else "incomplete",
                     "uncertainty_factors_thai": food_estimate.uncertainty_factors_thai,
                     "validation_flags": validation_flags,
                 }
