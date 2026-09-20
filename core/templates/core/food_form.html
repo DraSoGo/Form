@@ -35,12 +35,13 @@
   {# ── Food Breakdown (renders from entry.ai_breakdown JSON via app.js) ── #}
   {% if entry and entry.ai_breakdown %}
     <details class="card breakdown" open>
-      <summary>Food Breakdown / รายละเอียดอาหาร</summary>
+      <summary>Food Breakdown</summary>
       <div id="food-breakdown-meta" class="breakdown-meta"></div>
       <div class="table-wrap breakdown-table-wrap">
         <table class="breakdown-table" id="food-breakdown-table"></table>
       </div>
       <div class="breakdown-actions actions">
+        <button type="button" id="breakdown-add-row" class="secondary">+ Add ingredient</button>
         <button type="button" id="breakdown-recalc" class="secondary">Recalculate</button>
         <button type="button" id="breakdown-apply" class="secondary">Apply to nutrition fields</button>
       </div>

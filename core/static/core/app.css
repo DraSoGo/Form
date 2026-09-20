@@ -974,6 +974,30 @@ nav a[aria-current="page"]::after {
   font-size: 14px;
   margin: 0;
 }
+.breakdown-table .nutrient-input {
+  width: 64px;
+  min-height: 40px;
+  padding: 6px 6px;
+  font-size: 13px;
+  margin: 0;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.breakdown-table .ingredient-name-input {
+  width: 150px;
+  min-height: 40px;
+  padding: 6px 8px;
+  font-size: 13px;
+  font-weight: 600;
+  margin: 0;
+}
+.breakdown-remove-row {
+  min-height: 34px;
+  min-width: 34px;
+  padding: 2px 8px;
+  font-size: 16px;
+  line-height: 1;
+}
 .breakdown-table .num-cell { text-align: right; font-variant-numeric: tabular-nums; }
 .breakdown-table .num-cell.is-unknown { color: var(--muted); font-style: italic; }
 .breakdown-table tfoot td {
