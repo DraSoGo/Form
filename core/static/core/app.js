@@ -319,10 +319,21 @@ const chartData=document.querySelector('#chart-data');if(chartData){const charts
 
   function computeRow(ing) {
     const out = {};
+    // Direct user edits (custom_values) override the per-100g computation.
+    if (ing.custom_values) {
+      let anySet = false;
+      for (const k of COLS) {
+        if (ing.custom_values[k] != null && Number.isFinite(Number(ing.custom_values[k]))) {
+          out[k] = Number(ing.custom_values[k]); anySet = true;
+        } else { out[k] = null; }
+      }
+      if (anySet) return out;
+    }
     const weight = Number(ing.weight_g);
     if (!Number.isFinite(weight) || weight <= 0) return null;
+    if (!ing.per_100g) return null;
     for (const k of COLS) {
-      const per100 = ing.per_100g && ing.per_100g[k];
+      const per100 = ing.per_100g[k];
       out[k] = (per100 == null || isNaN(per100)) ? null : round1(weight / 100 * per100);
     }
     return out;
@@ -373,12 +384,13 @@ const chartData=document.querySelector('#chart-data');if(chartData){const charts
   function renderHeader() {
     const thead = document.createElement('thead');
     const tr = document.createElement('tr');
-    const headCells = ['Ingredient', 'Edible portion (g)', 'kcal', 'Protein', 'Carbs', 'Fat', 'Fiber', 'Sodium', 'Sugar', 'Source'];
+    const headCells = ['Ingredient', 'Edible portion (g)', 'kcal', 'Protein', 'Carbs', 'Fat', 'Fiber', 'Sodium', 'Sugar', 'Source', ''];
     for (const label of headCells) {
       const th = document.createElement('th');
       th.textContent = label;
-      if (label !== 'Ingredient' && label !== 'Source') th.className = 'num-cell';
+      if (label !== 'Ingredient' && label !== 'Source' && label !== '') th.className = 'num-cell';
       if (label === 'Edible portion (g)') th.style.textAlign = 'right';
+      if (label === '') th.setAttribute('aria-label', 'Remove ingredient');
       tr.append(th);
     }
     thead.append(tr);
@@ -395,14 +407,27 @@ const chartData=document.querySelector('#chart-data');if(chartData){const charts
   function renderRow(ing, idx) {
     const tr = document.createElement('tr');
     tr.dataset.idx = String(idx);
+    const isCustom = ing.custom === true;
 
     const nameTd = document.createElement('td');
     nameTd.className = 'ingredient-name';
-    const title = document.createElement('span');
-    title.textContent = ing.name_th || ing.ref_key || '';
-    nameTd.append(title);
-    nameTd.append(chipSpan(ing.user_confirmed ? 'completed' : 'awaiting',
-                           ing.user_confirmed ? 'confirmed' : 'estimated'));
+    if (isCustom) {
+      const nameInput = document.createElement('input');
+      nameInput.type = 'text';
+      nameInput.className = 'ingredient-name-input';
+      nameInput.placeholder = 'Ingredient name';
+      nameInput.maxLength = 80;
+      nameInput.value = ing.name_th || '';
+      nameInput.setAttribute('aria-label', 'Ingredient name');
+      nameInput.addEventListener('input', () => { ing.name_th = nameInput.value; });
+      nameTd.append(nameInput);
+    } else {
+      const title = document.createElement('span');
+      title.textContent = ing.name_th || ing.ref_key || '';
+      nameTd.append(title);
+      nameTd.append(chipSpan(ing.user_confirmed ? 'completed' : 'awaiting',
+                             ing.user_confirmed ? 'confirmed' : 'estimated'));
+    }
     tr.append(nameTd);
 
     const weightTd = document.createElement('td');
@@ -417,23 +442,72 @@ const chartData=document.querySelector('#chart-data');if(chartData){const charts
     input.setAttribute('aria-label', `Edible portion in grams for ${ing.name_th || ing.ref_key}`);
     input.addEventListener('input', () => {
       ing.weight_g = Number(input.value) || 0;
-      refreshTotals();
+      if (!isCustom) refreshTotals();
     });
     weightTd.append(input);
     tr.append(weightTd);
 
+    // Nutrient cells: editable inputs. Reference rows recalculate from
+    // per-100g when the weight changes, but direct edits override the
+    // computed value until the weight changes again. Custom rows are
+    // always free-form.
     for (const k of COLS) {
       const td = document.createElement('td');
       td.className = 'num-cell';
       td.dataset.col = k;
+      const cell = document.createElement('input');
+      cell.type = 'number';
+      cell.className = 'nutrient-input';
+      cell.step = '0.1';
+      cell.min = '0';
+      cell.setAttribute('aria-label', `${k} for ${ing.name_th || ing.ref_key}`);
+      cell.dataset.nutrient = k;
+      const per100 = ing.per_100g && ing.per_100g[k];
+      if (isCustom || per100 == null) {
+        cell.value = '';
+        cell.placeholder = '—';
+        ing.custom_values = ing.custom_values || {};
+        if (ing.custom_values[k] != null) cell.value = String(ing.custom_values[k]);
+        cell.addEventListener('input', () => {
+          ing.custom_values = ing.custom_values || {};
+          ing.custom_values[k] = cell.value === '' ? null : Number(cell.value);
+          refreshTotals();
+        });
+      } else {
+        cell.value = String(round1((ing.weight_g || 0) / 100 * per100));
+        cell.addEventListener('input', () => {
+          ing.custom_values = ing.custom_values || {};
+          ing.custom_values[k] = cell.value === '' ? null : Number(cell.value);
+          refreshTotals();
+        });
+        const weightListener = () => {
+          if (ing.custom_values && ing.custom_values[k] != null) return;
+          cell.value = String(round1((ing.weight_g || 0) / 100 * per100));
+        };
+        input.addEventListener('input', weightListener);
+      }
+      td.append(cell);
       tr.append(td);
     }
 
     const sourceTd = document.createElement('td');
     sourceTd.className = 'source-cell';
-    sourceTd.title = ing.source || '';
-    sourceTd.textContent = ing.source || '';
+    sourceTd.title = isCustom ? 'User-entered' : (ing.source || '');
+    sourceTd.textContent = isCustom ? 'User-entered' : (ing.source || '');
     tr.append(sourceTd);
+
+    const removeTd = document.createElement('td');
+    const removeBtn = document.createElement('button');
+    removeBtn.type = 'button';
+    removeBtn.className = 'secondary breakdown-remove-row';
+    removeBtn.textContent = '×';
+    removeBtn.setAttribute('aria-label', 'Remove ingredient');
+    removeBtn.addEventListener('click', () => {
+      const i = bd.ingredients.indexOf(ing);
+      if (i > -1) { bd.ingredients.splice(i, 1); tr.remove(); refreshTotals(); }
+    });
+    removeTd.append(removeBtn);
+    tr.append(removeTd);
 
     return tr;
   }
@@ -497,30 +571,15 @@ const chartData=document.querySelector('#chart-data');if(chartData){const charts
 
   function refreshTotals() {
     const totals = computeTotals();
-    const rows = table.querySelectorAll('tbody tr');
-    rows.forEach((tr) => {
-      const idx = Number(tr.dataset.idx);
-      const ing = bd.ingredients[idx];
-      const row = computeRow(ing);
-      for (const k of COLS) {
-        const cell = tr.querySelector(`td[data-col="${k}"]`);
-        if (!cell) continue;
-        if (row == null || row[k] == null) {
-          cell.textContent = 'Unknown';
-          cell.classList.add('is-unknown');
-          cell.removeAttribute('title');
-        } else {
-          cell.textContent = `${row[k]} ${UNITS[k]}`;
-          cell.classList.remove('is-unknown');
-          cell.title = `${row[k]} ${UNITS[k]}`;
-        }
-      }
-    });
+    // Row cells are now live inputs — only refresh totals + range.
     for (const k of COLS) {
       const cell = table.querySelector(`td[data-total-col="${k}"]`);
       if (!cell) continue;
-      const unknown = bd.unknown_fields && bd.unknown_fields.includes(k);
-      if (unknown) {
+      const allUnknown = bd.ingredients.every((ing) => {
+        const row = computeRow(ing);
+        return row == null || row[k] == null;
+      });
+      if (allUnknown) {
         cell.textContent = 'Unknown';
         cell.classList.add('is-unknown');
       } else {
@@ -543,22 +602,44 @@ const chartData=document.querySelector('#chart-data');if(chartData){const charts
 
   if (recalcBtn) recalcBtn.addEventListener('click', refreshTotals);
 
+  const addBtn = document.getElementById('breakdown-add-row');
+  if (addBtn) {
+    addBtn.addEventListener('click', () => {
+      const ing = {
+        custom: true,
+        ref_key: 'custom',
+        name_th: '',
+        weight_g: 0,
+        min_g: 0,
+        max_g: 9999,
+        user_confirmed: true,
+        per_100g: null,
+        custom_values: {},
+      };
+      bd.ingredients.push(ing);
+      const tbody = table.querySelector('tbody');
+      tbody.append(renderRow(ing, bd.ingredients.length - 1));
+      refreshTotals();
+      const nameInput = tbody.lastElementChild.querySelector('.ingredient-name-input');
+      if (nameInput) nameInput.focus();
+    });
+  }
+
   if (applyBtn) {
     applyBtn.addEventListener('click', () => {
       const totals = computeTotals();
-      // Find the main form's nutrient inputs by `name` attribute. The form
-      // is rendered by Django as <input name="calories" id="id_calories"> etc.
       const form = document.querySelector('form.card[method="post"]');
       if (!form) return;
       for (const k of COLS) {
         const input = form.querySelector(`input[name="${k}"]`);
         if (!input) continue;
-        const unknown = bd.unknown_fields && bd.unknown_fields.includes(k);
-        // For sugar/sodium, "unknown" means leave the main input empty so the
-        // saved entry keeps NULL — exactly what the contract specifies.
-        input.value = unknown ? '' : String(totals[k]);
+        const allUnknown = bd.ingredients.every((ing) => {
+          const row = computeRow(ing);
+          return row == null || row[k] == null;
+        });
+        // Unknown nutrients stay empty so the saved entry keeps NULL.
+        input.value = allUnknown ? '' : String(totals[k]);
       }
-      // Scroll the user to the (now-filled) Save button so they can confirm.
       const saveBtn = form.querySelector('button[type="submit"], button:not([type="button"])');
       if (saveBtn) saveBtn.scrollIntoView({ block: 'center', behavior: 'smooth' });
     });
