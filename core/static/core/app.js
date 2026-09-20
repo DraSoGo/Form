@@ -293,7 +293,7 @@ const chartData=document.querySelector('#chart-data');if(chartData){const charts
 // table with editable weights, live recompute, totals row, kcal-range
 // line, and "Apply to nutrition fields" that copies the totals into the
 // main form's seven nutrient inputs. No backend calls — fully client
-// deterministic. Unknown values stay "Unknown / ยังประเมินไม่ได้" in the
+// deterministic. Unknown values stay "Unknown" in the
 // table and clear the corresponding main-form input on Apply.
 // =========================================================================
 
