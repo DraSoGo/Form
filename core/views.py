@@ -289,9 +289,11 @@ def nutrition(request):
     if active_status:
         foods_qs = foods_qs.filter(state=active_status)
 
-    totals_incomplete = foods_qs.filter(
+    incomplete_entries = foods_qs.filter(
         models.Q(calories__isnull=True) | models.Q(sugar__isnull=True) | models.Q(sodium__isnull=True)
-    ).exists()
+    )
+    incomplete_uncertainty = foods_qs.filter(uncertainty__startswith="INCOMPLETE")
+    totals_incomplete = incomplete_entries.exists() or incomplete_uncertainty.exists()
 
     foods = foods_qs.order_by("-recorded_at")[:100]
 
