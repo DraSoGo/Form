@@ -604,11 +604,11 @@ class CoreFlowTests(TestCase):
             'recorded_at': timezone.localtime().strftime('%Y-%m-%dT%H:%M'),
             'source': 'manual',
             'weight': '80',
-            'body_fat': '20',
         }
         self.assertEqual(self.client.post('/body/', payload).status_code, 302)
         measurement = BodyMeasurement.objects.get()
-        self.assertEqual((measurement.weight, measurement.body_fat), (Decimal('80'), Decimal('20')))
+        self.assertEqual(measurement.weight, Decimal('80'))
+        self.assertIsNone(measurement.body_fat)
         self.assertIsNone(measurement.muscle)
         self.assertIsNone(measurement.bmr)
 
@@ -624,6 +624,7 @@ class CoreFlowTests(TestCase):
         }
         self.assertEqual(self.client.post('/body/', payload).status_code, 302)
         measurement = BodyMeasurement.objects.get()
+        self.assertEqual(measurement.body_fat, Decimal('20'))
         self.assertEqual(measurement.muscle, Decimal('40.5'))
         self.assertEqual(measurement.bmr, Decimal('1600'))
 
