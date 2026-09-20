@@ -77,9 +77,6 @@
             {{ field.label_tag }}
             {{ field }}
             {% if field.help_text %}<p class="helptext">{{ field.help_text }}</p>{% endif %}
-            {% if field.name == 'body_fat' %}
-              <p class="helptext">Optional — leave blank if your scale doesn't report it.</p>
-            {% endif %}
           </div>
         {% endfor %}
       </div>
