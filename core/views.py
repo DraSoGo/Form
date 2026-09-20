@@ -331,10 +331,11 @@ def food_edit(request, pk=None):
                     delete_image(obj)
                 entry.image = image
                 entry.image_status = "stored"
-            if pk:
-                entry.state = (
-                    "user_corrected" if entry.state != "confirmed" else "confirmed"
-                )
+            if pk and entry.state == "manual":
+                # An edited manual entry reflects a human correction, but a
+                # user-chosen state (confirmed/ai_estimated/user_corrected)
+                # is always preserved as submitted.
+                entry.state = "user_corrected"
             entry.save()
             if request.POST.get("save_library"):
                 values = {x: getattr(entry, x) for x in ["quantity", *NUTRIENTS]}

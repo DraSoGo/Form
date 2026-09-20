@@ -108,22 +108,34 @@
   </div>
 </form>
 
-{# ── Entries as compact rows inside an expandable form for bulk save ─ #}
+{# ── Entries as compact rows ── #}
 <h2>Entries</h2>
 
-<form method="post" action="/templates/save/">
-  {% csrf_token %}
+{% if foods %}
+  {# The bulk-save form must NOT wrap the list: nested forms are invalid
+     HTML and the parser drops the inner (delete) forms. Checkboxes
+     reference this form via the form="bulk-template" attribute instead. #}
+  <form id="bulk-template" method="post" action="/templates/save/">
+    {% csrf_token %}
+    <div class="actions" style="margin:0 0 14px;flex-wrap:wrap;align-items:end;gap:12px">
+      <label for="template-name" style="margin:0;flex:1 1 220px">
+        Meal template name
+        <input id="template-name" name="name" maxlength="160" placeholder="e.g. Post-workout shake">
+      </label>
+      <button type="submit">Save selected as template</button>
+    </div>
+  </form>
 
-  {% if foods %}
-    <ul class="food-list">
-      {% for f in foods %}
-        <li class="food-row">
-          <label class="food-select">
-            <input class="food-checkbox" type="checkbox"
-                   name="food_ids" value="{{ f.pk }}"
-                   aria-label="Select {{ f.name }} for meal template">
-            <span class="visually-hidden">Select {{ f.name }}</span>
-          </label>
+  <ul class="food-list">
+    {% for f in foods %}
+      <li class="food-row">
+        <label class="food-select">
+          <input class="food-checkbox" type="checkbox"
+                 form="bulk-template"
+                 name="food_ids" value="{{ f.pk }}"
+                 aria-label="Select {{ f.name }} for meal template">
+          <span class="visually-hidden">Select {{ f.name }}</span>
+        </label>
 
           <details class="food-details">
             <summary class="food-summary">
@@ -210,20 +222,11 @@
         </li>
       {% endfor %}
     </ul>
-
-    <div class="actions" style="margin-top:14px;flex-wrap:wrap;align-items:end;gap:12px">
-      <label for="template-name" style="margin:0;flex:1 1 220px">
-        Meal template name
-        <input id="template-name" name="name" maxlength="160" placeholder="e.g. Post-workout shake">
-      </label>
-      <button type="submit">Save selected as template</button>
-    </div>
   {% else %}
     <p class="muted">No meals logged for this day.</p>
     <div class="actions">
       <a class="button" href="/nutrition/new/">+ Log food / photo</a>
     </div>
   {% endif %}
-</form>
 
 {% endblock %}

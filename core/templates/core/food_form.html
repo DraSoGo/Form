@@ -2,58 +2,79 @@
 {% block title %}{{ title }} · Form{% endblock %}
 {% block content %}
 <p class="eyebrow">Nourish</p><h1>{{ title }}</h1>
+
+{# ── Section: Photo ── #}
 {% if entry.image %}
 <section class="card">
   <img class="food-photo" src="/photos/{{ entry.pk }}/" alt="Your food photograph">
   <div class="actions">
     <form method="post" action="/coach/food/{{ entry.pk }}/">{% csrf_token %}<button>Analyze photo</button></form>
     <form method="post" action="/photos/{{ entry.pk }}/delete/">{% csrf_token %}<button class="secondary">Delete photo, keep entry</button></form>
-  </div><p>{{ entry.uncertainty }}</p>
+  </div>
+  {% if entry.uncertainty %}<p class="muted">{{ entry.uncertainty }}</p>{% endif %}
 </section>
 {% endif %}
+
+{# ── Section: Nutrition Summary (AI result first, read-only view) ── #}
+{% if entry and entry.ai_breakdown %}
+  <section class="card meal-summary-card">
+    <div id="food-breakdown-primary" class="meal-primary"></div>
+    {% with bd=entry.ai_breakdown %}{{ bd|json_script:"food-breakdown-data" }}{% endwith %}
+  </section>
+{% endif %}
+
+{# ── Main edit form ── #}
 <form class="card" method="post" enctype="multipart/form-data">
   {% csrf_token %}{{ form.non_field_errors }}
-  <h2>Start with a photo</h2>
-  <p>A photo and an optional note are enough. Save it, then choose Analyze photo to estimate the meal.</p>
-  <label for="food-photo-input">Food photo</label>
-  <input id="food-photo-input" type="file" name="photo" accept="image/jpeg,image/png,image/webp" aria-describedby="photo-help">
-  <p class="helptext" id="photo-help">Choose from your camera, photo library or files. JPEG, PNG or WebP, up to 10 MB. Nutrition estimates can be reviewed and corrected.</p>
+
+  <h2>Photo &amp; note</h2>
+  {% if not entry.image %}
+    <p class="helptext">A photo and an optional note are enough. Save it, then choose Analyze photo to estimate the meal.</p>
+    <label for="food-photo-input">Food photo</label>
+    <input id="food-photo-input" type="file" name="photo" accept="image/jpeg,image/png,image/webp" aria-describedby="photo-help">
+    <p class="helptext" id="photo-help">Choose from your camera, photo library or files. JPEG, PNG or WebP, up to 10 MB.</p>
+  {% endif %}
   {{ form.note.as_field_group }}
   {{ form.recorded_at.as_field_group }}
-  <details {% if form.errors or not entry or entry and not entry.image %}open{% endif %}>
-    <summary>Food details &amp; nutrition</summary>
-    <p class="helptext">Enter these for manual logging. You can leave them blank when adding a photo.</p>
+
+  {# ── Editable nutrition & details — collapsed by default when AI result exists ── #}
+  <details {% if form.errors or not entry or not entry.ai_breakdown %}open{% endif %}>
+    <summary>Edit details &amp; nutrition</summary>
+    <p class="helptext">Name, portion and nutrition values. Sugar and Sodium can stay empty if unknown.</p>
     {{ form.name.as_field_group }}{{ form.quantity.as_field_group }}
     <div class="form-grid">
       {% for field in form %}{% if field.name != 'name' and field.name != 'quantity' and field.name != 'note' and field.name != 'recorded_at' and field.name != 'state' %}<div>{{ field.as_field_group }}</div>{% endif %}{% endfor %}
     </div>
-    <p class="helptext muted">Sugar and Sodium can stay empty if the estimate is unknown — leave blank or enter your own value.</p>
     {{ form.state.as_field_group }}
     <label class="inline checkbox-save-library"><input name="save_library" type="checkbox" {% if request.POST.save_library %}checked{% endif %}> Save these values to my food library</label>
   </details>
 
-  {# ── Food Breakdown (meal-oriented primary view, rendered by app.js) ── #}
+  {# ── Advanced: ingredient-level breakdown table ── #}
   {% if entry and entry.ai_breakdown %}
-    <details class="card breakdown" open>
-      <summary>Food Breakdown</summary>
-      <div id="food-breakdown-primary" class="meal-primary"></div>
-      <details class="breakdown-advanced">
-        <summary>Ingredient details</summary>
-        <div class="table-wrap breakdown-table-wrap">
-          <table class="breakdown-table" id="food-breakdown-table"></table>
-        </div>
-        <div class="breakdown-actions actions">
-          <button type="button" id="breakdown-add-row" class="secondary">+ Add ingredient</button>
-          <button type="button" id="breakdown-recalc" class="secondary">Recalculate</button>
-          <button type="button" id="breakdown-apply" class="secondary">Apply to nutrition fields</button>
-        </div>
-      </details>
+    <details class="breakdown-advanced card-inner-details">
+      <summary>Advanced · Food Breakdown</summary>
+      <div class="table-wrap breakdown-table-wrap">
+        <table class="breakdown-table" id="food-breakdown-table"></table>
+      </div>
+      <div class="breakdown-actions actions">
+        <button type="button" id="breakdown-add-row" class="secondary">+ Add ingredient</button>
+        <button type="button" id="breakdown-recalc" class="secondary">Recalculate</button>
+        <button type="button" id="breakdown-apply" class="secondary">Apply to nutrition fields</button>
+      </div>
       <p class="breakdown-sources muted">Sources: USDA FDC / Thai typical values (curated)</p>
-      {% with bd=entry.ai_breakdown %}{{ bd|json_script:"food-breakdown-data" }}{% endwith %}
     </details>
   {% endif %}
 
-  <div class="actions"><button>Save food</button><a href="/nutrition/">Back to diary</a></div>
+  <div class="actions">
+    <button>Save food</button>
+    <a href="/nutrition/">Back to diary</a>
+    {% if entry %}<button type="submit" formaction="/delete/food/{{ entry.pk }}/" form="delete-food-{{ entry.pk }}" class="secondary" formnovalidate
+      onclick="return confirm('Delete this food entry? This cannot be undone.')">Delete entry</button>{% endif %}
+  </div>
 </form>
-{% if entry %}<form class="card" method="post" action="/delete/food/{{ entry.pk }}/">{% csrf_token %}<button class="secondary">Delete food entry</button></form>{% endif %}
+
+{% if entry %}
+  {# Separate top-level delete form (never nested inside the edit form) #}
+  <form id="delete-food-{{ entry.pk }}" method="post" action="/delete/food/{{ entry.pk }}/"></form>
+{% endif %}
 {% endblock %}
