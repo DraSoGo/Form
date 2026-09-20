@@ -40,7 +40,7 @@
 
 {% if totals_incomplete %}
   <p class="muted" style="margin:4px 0 14px;font-size:12.5px">
-    Some entries have unknown sugar/sodium — totals shown are partial.
+    Some entries are incomplete or have unknown nutrients — totals shown are partial.
   </p>
 {% endif %}
 
@@ -139,6 +139,9 @@
                 {% if f.ai_breakdown and f.ai_breakdown.range_kcal.0 is not None and f.ai_breakdown.range_kcal.1 is not None %}
                   <small class="muted food-kcal-range">≈{{ f.ai_breakdown.range_kcal.0|floatformat:0 }}–{{ f.ai_breakdown.range_kcal.1|floatformat:0 }} kcal</small>
                 {% endif %}
+                {% if f.ai_breakdown and f.ai_breakdown.completeness == 'incomplete' %}
+                  <small class="muted food-kcal-range" style="font-style:italic">partial — incomplete estimate</small>
+                {% endif %}
               </span>
 
               <span class="food-chip">
@@ -147,6 +150,9 @@
                 {% elif f.state == "user_corrected" %}<span class="chip in-progress">User corrected</span>
                 {% elif f.state == "confirmed" %}<span class="chip completed">Confirmed</span>
                 {% else %}<span class="chip planned">{{ f.get_state_display }}</span>{% endif %}
+                {% if f.ai_breakdown and f.ai_breakdown.completeness == 'incomplete' %}
+                  <span class="chip failed">Incomplete</span>
+                {% endif %}
               </span>
 
               <svg class="food-chevron" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg>

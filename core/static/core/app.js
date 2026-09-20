@@ -289,12 +289,18 @@ const chartData=document.querySelector('#chart-data');if(chartData){const charts
 // =========================================================================
 // Food Breakdown (entry.ai_breakdown JSON)
 // -------------------------------------------------------------------------
-// Reads the JSON emitted by food_form.html and renders a per-ingredient
-// table with editable weights, live recompute, totals row, kcal-range
-// line, and "Apply to nutrition fields" that copies the totals into the
-// main form's seven nutrient inputs. No backend calls — fully client
-// deterministic. Unknown values stay "Unknown" in the
-// table and clear the corresponding main-form input on Apply.
+// Schema 2 (current contract) renders a meal-oriented primary view: dish
+// header with cuisine / strategy / confidence / completeness chips,
+// incomplete-meal warning, "you ate" portion selector, big calorie +
+// range, macro strip, unmatched list, and an advanced ingredient-details
+// table with editable weights and nutrient overrides. The Apply button
+// copies the fraction-adjusted totals into the main form's seven
+// nutrient inputs (sugar / sodium left empty when unknown).
+//
+// Schema 1 (legacy) is still accepted: items fall back to bd.ingredients,
+// and every new field (dish_name, strategy, completeness, unmatched,
+// fraction_consumed) has a graceful default so old entries keep
+// rendering with the primary view.
 // =========================================================================
 
 (function initFoodBreakdown(){
@@ -304,24 +310,52 @@ const chartData=document.querySelector('#chart-data');if(chartData){const charts
   let bd;
   try { bd = JSON.parse(dataEl.textContent); }
   catch (e) { return; }
-  if (!bd || !Array.isArray(bd.ingredients)) return;
+  if (!bd) return;
+
+  // Normalize: schema 2 uses "items"; schema 1 used "ingredients". Fall
+  // back so stored schema-1 breakdowns still render.
+  const items = Array.isArray(bd.items) ? bd.items
+              : Array.isArray(bd.ingredients) ? bd.ingredients
+              : [];
+  if (!items.length && !Array.isArray(bd.unmatched)) return;
+
+  // Per-item fraction (schema 2). Default 1.0 so schema 1 is unchanged.
+  for (const ing of items) {
+    if (typeof ing.fraction_consumed !== 'number') ing.fraction_consumed = 1.0;
+  }
 
   const meta = document.getElementById('food-breakdown-meta');
+  const primary = document.getElementById('food-breakdown-primary');
   const table = document.getElementById('food-breakdown-table');
   const recalcBtn = document.getElementById('breakdown-recalc');
   const applyBtn = document.getElementById('breakdown-apply');
-  if (!table) return;
+  if (!table || !primary) return;
 
   const COLS = ['kcal', 'protein', 'carbs', 'fat', 'fiber', 'sodium', 'sugar'];
   const UNITS = { kcal: 'kcal', protein: 'g', carbs: 'g', fat: 'g', fiber: 'g', sodium: 'mg', sugar: 'g' };
+  const MACRO_COLS = ['protein', 'carbs', 'fat', 'fiber', 'sodium', 'sugar'];
+  const MACRO_LABELS = { protein: 'Protein', carbs: 'Carbs', fat: 'Fat', fiber: 'Fiber', sodium: 'Sodium', sugar: 'Sugar' };
 
   function round1(n) { return Math.round(n * 10) / 10; }
+  function roundInt(n) { return Math.round(n); }
+  function fmt(n, k) {
+    if (n == null || !Number.isFinite(Number(n))) return 'Unknown';
+    const v = (k === 'kcal' || k === 'sodium') ? roundInt(n) : round1(n);
+    return `${v} ${UNITS[k]}`;
+  }
+  function fmtRange(v, k) {
+    if (v == null || !Number.isFinite(Number(v))) return 'Unknown';
+    if (k === 'kcal') return `${Math.round(v / 10) * 10}`;
+    return `${round1(v)}`;
+  }
 
-  function computeRow(ing) {
-    const out = {};
-    // Direct user edits (custom_values) override the per-100g computation.
+  // Per-item compute (no fraction consumed yet — fractions apply at the
+  // totals level so the editable table can recompute on weight change
+  // without compounding fraction_consumed).
+  function computeItem(ing) {
     if (ing.custom_values) {
       let anySet = false;
+      const out = {};
       for (const k of COLS) {
         if (ing.custom_values[k] != null && Number.isFinite(Number(ing.custom_values[k]))) {
           out[k] = Number(ing.custom_values[k]); anySet = true;
@@ -330,8 +364,8 @@ const chartData=document.querySelector('#chart-data');if(chartData){const charts
       if (anySet) return out;
     }
     const weight = Number(ing.weight_g);
-    if (!Number.isFinite(weight) || weight <= 0) return null;
-    if (!ing.per_100g) return null;
+    if (!Number.isFinite(weight) || weight <= 0 || !ing.per_100g) return null;
+    const out = {};
     for (const k of COLS) {
       const per100 = ing.per_100g[k];
       out[k] = (per100 == null || isNaN(per100)) ? null : round1(weight / 100 * per100);
@@ -339,46 +373,302 @@ const chartData=document.querySelector('#chart-data');if(chartData){const charts
     return out;
   }
 
-  function renderMeta() {
-    if (!meta) return;
-    meta.replaceChildren();
-    const conf = bd.confidence || 'unknown';
-    const confChip = document.createElement('span');
-    confChip.className = `chip ${
-      conf === 'high' ? 'completed' :
-      conf === 'medium' ? 'in-progress' :
-      conf === 'low' ? 'awaiting' : 'planned'
-    }`;
-    confChip.textContent = `Confidence: ${conf}`;
-    meta.append(confChip);
+  // Global portion fraction — user-controlled (default 1.0 = ate it all).
+  let portionFraction = 1.0;
 
-    if (Array.isArray(bd.range_kcal) && bd.range_kcal.length === 2) {
-      const lo = Math.round(bd.range_kcal[0]);
-      const hi = Math.round(bd.range_kcal[1]);
-      const span = document.createElement('span');
-      span.className = 'muted';
-      span.textContent = `≈ ${lo}–${hi} kcal`;
-      meta.append(span);
+  // Totals = Σ per-item computed × fraction_consumed × portionFraction.
+  function computeTotals() {
+    const totals = {};
+    for (const k of COLS) totals[k] = 0;
+    for (const ing of items) {
+      const row = computeItem(ing);
+      if (!row) continue;
+      const frac = Number(ing.fraction_consumed || 1.0) * portionFraction;
+      for (const k of COLS) {
+        if (row[k] != null) totals[k] += row[k] * frac;
+      }
+    }
+    for (const k of COLS) totals[k] = round1(totals[k]);
+    return totals;
+  }
+
+  // All unknowns for one column (every per-item computation null) AND the
+  // portion factor must still produce a number; if any per-item has a
+  // value, the totals are usable even if partial.
+  function columnAllUnknown(col) {
+    return items.every((ing) => {
+      const row = computeItem(ing);
+      return row == null || row[col] == null;
+    });
+  }
+
+  // ── Primary view (header, portion, calorie, macros, unmatched) ──────
+
+  function renderPrimary() {
+    primary.replaceChildren();
+
+    // --- Header row: dish name + chips ---
+    const header = document.createElement('div');
+    header.className = 'meal-hero';
+
+    const name = document.createElement('h3');
+    name.className = 'meal-name';
+    name.textContent = bd.dish_name || 'This meal';
+    header.append(name);
+
+    const chipRow = document.createElement('div');
+    chipRow.className = 'meal-chips';
+
+    if (bd.cuisine) {
+      const cuisineChip = document.createElement('span');
+      cuisineChip.className = 'chip planned';
+      cuisineChip.textContent = `Cuisine: ${bd.cuisine}`;
+      chipRow.append(cuisineChip);
     }
 
-    if (Array.isArray(bd.unknown_fields) && bd.unknown_fields.length) {
-      const u = document.createElement('span');
-      u.className = 'muted';
-      u.textContent = `Unknown: ${bd.unknown_fields.join(', ')}`;
-      meta.append(u);
+    if (bd.strategy) {
+      const label = { whole_dish: 'Whole dish', components: 'Components', hybrid: 'Hybrid' }[bd.strategy]
+                  || bd.strategy;
+      const strat = document.createElement('span');
+      strat.className = 'chip awaiting';
+      strat.textContent = `Strategy: ${label}`;
+      chipRow.append(strat);
     }
 
-    // Uncertainty factors (Thai text, rendered as-is per the contract).
+    if (bd.confidence) {
+      const confChip = document.createElement('span');
+      confChip.className = `chip ${
+        bd.confidence === 'high'   ? 'completed' :
+        bd.confidence === 'medium' ? 'in-progress' :
+        bd.confidence === 'low'    ? 'awaiting'   : 'planned'
+      }`;
+      confChip.textContent = `Confidence: ${bd.confidence}`;
+      chipRow.append(confChip);
+    }
+
+    if (bd.completeness === 'incomplete') {
+      const ic = document.createElement('span');
+      ic.className = 'chip failed';
+      ic.textContent = 'Incomplete';
+      chipRow.append(ic);
+    }
+
+    header.append(chipRow);
+    primary.append(header);
+
+    // --- Incomplete-meal warning card ---
+    if (bd.completeness === 'incomplete' && Array.isArray(bd.unmatched) && bd.unmatched.length) {
+      const major = bd.unmatched.filter(u => u.estimated_share === 'major');
+      const names = major.length ? major.map(u => u.name_th).join(', ')
+                                  : bd.unmatched.map(u => u.name_th).join(', ');
+      const warning = document.createElement('div');
+      warning.className = 'incomplete-warning';
+      warning.setAttribute('role', 'status');
+      const head = document.createElement('p');
+      head.style.margin = '0 0 4px';
+      head.innerHTML = '<strong>Incomplete estimate</strong> — major components missing: ' + escapeHtml(names) + '. Totals below are partial.';
+      warning.append(head);
+      // Per-unmatched notes
+      for (const u of bd.unmatched) {
+        if (!u.note) continue;
+        const np = document.createElement('p');
+        np.className = 'muted';
+        np.style.margin = '4px 0 0';
+        np.style.fontSize = '12.5px';
+        np.textContent = `— ${u.name_th}: ${u.note}`;
+        warning.append(np);
+      }
+      primary.append(warning);
+    }
+
+    // --- "You ate" portion selector ---
+    const portion = document.createElement('div');
+    portion.className = 'seg portion-selector';
+    portion.setAttribute('role', 'radiogroup');
+    portion.setAttribute('aria-label', 'You ate');
+
+    function portionBtn(label, fraction) {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.textContent = label;
+      b.className = 'seg-btn';
+      b.setAttribute('role', 'radio');
+      b.dataset.fraction = String(fraction);
+      b.setAttribute('aria-checked', 'false');
+      if (Math.abs(portionFraction - fraction) < 1e-6) {
+        b.classList.add('is-active');
+        b.setAttribute('aria-checked', 'true');
+      }
+      return b;
+    }
+    portion.append(portionBtn('All', 1.0));
+    portion.append(portionBtn('75%', 0.75));
+    portion.append(portionBtn('Half', 0.5));
+
+    const customWrap = document.createElement('label');
+    customWrap.className = 'seg-custom';
+    customWrap.textContent = 'Custom ';
+    const customInput = document.createElement('input');
+    customInput.type = 'number';
+    customInput.min = '0';
+    customInput.max = '100';
+    customInput.step = '1';
+    customInput.value = String(Math.round(portionFraction * 100));
+    customInput.setAttribute('aria-label', 'Custom percent you ate');
+    customInput.style.width = '64px';
+    customInput.style.minHeight = '32px';
+    customInput.style.margin = '0 4px';
+    customInput.style.padding = '2px 6px';
+    const customPct = document.createElement('span');
+    customPct.textContent = '%';
+    customWrap.append(customInput, customPct);
+    portion.append(customWrap);
+    primary.append(portion);
+
+    function selectPortion(fraction) {
+      portionFraction = Math.max(0, Math.min(1, Number(fraction) || 0));
+      customInput.value = String(Math.round(portionFraction * 100));
+      portion.querySelectorAll('button[data-fraction]').forEach(b => {
+        const isActive = Math.abs(Number(b.dataset.fraction) - portionFraction) < 1e-6;
+        b.classList.toggle('is-active', isActive);
+        b.setAttribute('aria-checked', String(isActive));
+      });
+      renderCalorie();
+      renderMacros();
+    }
+    portion.querySelectorAll('button[data-fraction]').forEach(b => {
+      b.addEventListener('click', () => selectPortion(Number(b.dataset.fraction)));
+    });
+    customInput.addEventListener('input', () => {
+      const pct = Number(customInput.value) || 0;
+      selectPortion(pct / 100);
+    });
+
+    // --- Big calorie display ---
+    const kcal = document.createElement('p');
+    kcal.className = 'meal-kcal';
+    kcal.dataset.mealKcal = '1';
+    kcal.textContent = '— kcal';
+    primary.append(kcal);
+
+    const range = document.createElement('p');
+    range.className = 'meal-kcal-range muted';
+    range.dataset.mealRange = '1';
+    range.textContent = '';
+    primary.append(range);
+
+    // --- Macro strip ---
+    const macros = document.createElement('dl');
+    macros.className = 'macro-strip';
+    macros.setAttribute('aria-label', 'Macros');
+    for (const k of MACRO_COLS) {
+      const wrap = document.createElement('div');
+      const dt = document.createElement('dt');
+      dt.textContent = MACRO_LABELS[k];
+      const dd = document.createElement('dd');
+      dd.dataset.macroCol = k;
+      dd.textContent = 'Unknown';
+      wrap.append(dt, dd);
+      macros.append(wrap);
+    }
+    primary.append(macros);
+
+    // --- Uncertainty factors (Thai passthrough) ---
     if (Array.isArray(bd.uncertainty_factors_thai) && bd.uncertainty_factors_thai.length) {
       for (const note of bd.uncertainty_factors_thai) {
         const p = document.createElement('p');
-        p.className = 'muted';
-        p.style.margin = '4px 0 0';
-        p.style.fontSize = '12.5px';
+        p.className = 'muted meal-uncertainty';
         p.textContent = note;
-        meta.append(p);
+        primary.append(p);
       }
     }
+
+    // --- Unmatched list (already shown in warning card if incomplete; here
+    // show the full list separately if completeness !== 'incomplete') ---
+    if (Array.isArray(bd.unmatched) && bd.unmatched.length && bd.completeness !== 'incomplete') {
+      const list = document.createElement('div');
+      list.className = 'unmatched-list';
+      const head = document.createElement('p');
+      head.className = 'muted';
+      head.style.margin = '12px 0 6px';
+      head.textContent = 'Components not in the meal map:';
+      list.append(head);
+      for (const u of bd.unmatched) {
+        const item = document.createElement('div');
+        item.className = 'unmatched-item';
+        const nameSpan = document.createElement('span');
+        nameSpan.className = 'unmatched-name';
+        nameSpan.textContent = u.name_th || '';
+        item.append(nameSpan);
+        const shareChip = document.createElement('span');
+        shareChip.className = `chip ${u.estimated_share === 'major' ? 'failed' : 'planned'}`;
+        shareChip.textContent = u.estimated_share || 'minor';
+        item.append(shareChip);
+        if (u.note) {
+          const note = document.createElement('p');
+          note.className = 'muted unmatched-note';
+          note.textContent = u.note;
+          item.append(note);
+        }
+        list.append(item);
+      }
+      primary.append(list);
+    }
+  }
+
+  // HTML-escape for safely injecting potentially-Thai names into innerHTML.
+  function escapeHtml(s) {
+    return String(s).replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
+  }
+
+  // ── Live calorie + range ──
+
+  function renderCalorie() {
+    const el = primary.querySelector('[data-meal-kcal]');
+    const rangeEl = primary.querySelector('[data-meal-range]');
+    if (!el || !rangeEl) return;
+    const totals = computeTotals();
+    const kcalAllUnknown = columnAllUnknown('kcal');
+    if (kcalAllUnknown) {
+      el.textContent = 'Unknown kcal';
+      el.classList.add('is-unknown');
+    } else {
+      el.classList.remove('is-unknown');
+      el.textContent = `${Math.round(totals.kcal)} kcal`;
+    }
+    if (Array.isArray(bd.range_kcal) && bd.range_kcal.length === 2) {
+      const lo = bd.range_kcal[0] * portionFraction;
+      const hi = bd.range_kcal[1] * portionFraction;
+      rangeEl.textContent = `≈ ${fmtRange(lo, 'kcal')}–${fmtRange(hi, 'kcal')} kcal`;
+    } else {
+      rangeEl.textContent = '';
+    }
+  }
+
+  // ── Live macro strip ──
+
+  function renderMacros() {
+    const totals = computeTotals();
+    for (const k of MACRO_COLS) {
+      const cell = primary.querySelector(`[data-macro-col="${k}"]`);
+      if (!cell) continue;
+      if (columnAllUnknown(k)) {
+        cell.textContent = 'Unknown';
+        cell.classList.add('is-unknown');
+      } else {
+        cell.textContent = `${(k === 'sodium') ? Math.round(totals[k]) : round1(totals[k])} ${UNITS[k]}`;
+        cell.classList.remove('is-unknown');
+      }
+    }
+  }
+
+  // ── Advanced ingredient table (existing, reading items) ──
+
+  function chipSpan(kind, text) {
+    const span = document.createElement('span');
+    span.className = `chip ${kind}`;
+    span.textContent = text;
+    return span;
   }
 
   function renderHeader() {
@@ -395,13 +685,6 @@ const chartData=document.querySelector('#chart-data');if(chartData){const charts
     }
     thead.append(tr);
     table.append(thead);
-  }
-
-  function chipSpan(kind, text) {
-    const span = document.createElement('span');
-    span.className = `chip ${kind}`;
-    span.textContent = text;
-    return span;
   }
 
   function renderRow(ing, idx) {
@@ -442,15 +725,15 @@ const chartData=document.querySelector('#chart-data');if(chartData){const charts
     input.setAttribute('aria-label', `Edible portion in grams for ${ing.name_th || ing.ref_key}`);
     input.addEventListener('input', () => {
       ing.weight_g = Number(input.value) || 0;
-      if (!isCustom) refreshTotals();
+      if (!isCustom) {
+        refreshTableTotals();
+        renderCalorie();
+        renderMacros();
+      }
     });
     weightTd.append(input);
     tr.append(weightTd);
 
-    // Nutrient cells: editable inputs. Reference rows recalculate from
-    // per-100g when the weight changes, but direct edits override the
-    // computed value until the weight changes again. Custom rows are
-    // always free-form.
     for (const k of COLS) {
       const td = document.createElement('td');
       td.className = 'num-cell';
@@ -471,14 +754,18 @@ const chartData=document.querySelector('#chart-data');if(chartData){const charts
         cell.addEventListener('input', () => {
           ing.custom_values = ing.custom_values || {};
           ing.custom_values[k] = cell.value === '' ? null : Number(cell.value);
-          refreshTotals();
+          refreshTableTotals();
+          renderCalorie();
+          renderMacros();
         });
       } else {
         cell.value = String(round1((ing.weight_g || 0) / 100 * per100));
         cell.addEventListener('input', () => {
           ing.custom_values = ing.custom_values || {};
           ing.custom_values[k] = cell.value === '' ? null : Number(cell.value);
-          refreshTotals();
+          refreshTableTotals();
+          renderCalorie();
+          renderMacros();
         });
         const weightListener = () => {
           if (ing.custom_values && ing.custom_values[k] != null) return;
@@ -503,8 +790,8 @@ const chartData=document.querySelector('#chart-data');if(chartData){const charts
     removeBtn.textContent = '×';
     removeBtn.setAttribute('aria-label', 'Remove ingredient');
     removeBtn.addEventListener('click', () => {
-      const i = bd.ingredients.indexOf(ing);
-      if (i > -1) { bd.ingredients.splice(i, 1); tr.remove(); refreshTotals(); }
+      const i = items.indexOf(ing);
+      if (i > -1) { items.splice(i, 1); tr.remove(); refreshTableTotals(); renderCalorie(); renderMacros(); }
     });
     removeTd.append(removeBtn);
     tr.append(removeTd);
@@ -514,9 +801,7 @@ const chartData=document.querySelector('#chart-data');if(chartData){const charts
 
   function renderBody() {
     const tbody = document.createElement('tbody');
-    bd.ingredients.forEach((ing, idx) => {
-      tbody.append(renderRow(ing, idx));
-    });
+    items.forEach((ing, idx) => { tbody.append(renderRow(ing, idx)); });
     table.append(tbody);
   }
 
@@ -555,52 +840,68 @@ const chartData=document.querySelector('#chart-data');if(chartData){const charts
     table.append(tfoot);
   }
 
-  function computeTotals() {
+  // Table's totals row reflects per-item × fraction_consumed only
+  // (NOT portionFraction — the table shows what's on the plate; the
+  // primary hero reflects what was eaten after portion adjustment).
+  function computeTableTotals() {
     const totals = {};
     for (const k of COLS) totals[k] = 0;
-    for (const ing of bd.ingredients) {
-      const row = computeRow(ing);
+    for (const ing of items) {
+      const row = computeItem(ing);
       if (!row) continue;
+      const frac = Number(ing.fraction_consumed || 1.0);
       for (const k of COLS) {
-        if (row[k] != null) totals[k] += row[k];
+        if (row[k] != null) totals[k] += row[k] * frac;
       }
     }
     for (const k of COLS) totals[k] = round1(totals[k]);
     return totals;
   }
 
-  function refreshTotals() {
-    const totals = computeTotals();
-    // Row cells are now live inputs — only refresh totals + range.
+  function refreshTableTotals() {
+    const totals = computeTableTotals();
     for (const k of COLS) {
       const cell = table.querySelector(`td[data-total-col="${k}"]`);
       if (!cell) continue;
-      const allUnknown = bd.ingredients.every((ing) => {
-        const row = computeRow(ing);
+      const allUnknown = items.every((ing) => {
+        const row = computeItem(ing);
         return row == null || row[k] == null;
       });
       if (allUnknown) {
         cell.textContent = 'Unknown';
         cell.classList.add('is-unknown');
       } else {
-        cell.textContent = `${totals[k]} ${UNITS[k]}`;
+        cell.textContent = `${(k === 'kcal' || k === 'sodium') ? Math.round(totals[k]) : round1(totals[k])} ${UNITS[k]}`;
         cell.classList.remove('is-unknown');
       }
     }
     const rangeCell = table.querySelector('[data-range-cell]');
     if (rangeCell && Array.isArray(bd.range_kcal) && bd.range_kcal.length === 2) {
-      rangeCell.textContent = `≈ ${Math.round(bd.range_kcal[0])}–${Math.round(bd.range_kcal[1])} kcal`;
+      // Table range shows the "on the plate" range (no portionFraction).
+      rangeCell.textContent = `≈ ${bd.range_kcal[0]}–${bd.range_kcal[1]} kcal`;
     }
   }
 
-  // Build the table.
-  renderMeta();
-  renderHeader();
-  renderBody();
-  renderFoot();
-  refreshTotals();
+  // ── Build the page ──
 
-  if (recalcBtn) recalcBtn.addEventListener('click', refreshTotals);
+  renderPrimary();
+  renderCalorie();
+  renderMacros();
+
+  if (items.length) {
+    renderHeader();
+    renderBody();
+    renderFoot();
+    refreshTableTotals();
+  }
+
+  if (recalcBtn) {
+    recalcBtn.addEventListener('click', () => {
+      refreshTableTotals();
+      renderCalorie();
+      renderMacros();
+    });
+  }
 
   const addBtn = document.getElementById('breakdown-add-row');
   if (addBtn) {
@@ -615,11 +916,14 @@ const chartData=document.querySelector('#chart-data');if(chartData){const charts
         user_confirmed: true,
         per_100g: null,
         custom_values: {},
+        fraction_consumed: 1.0,
       };
-      bd.ingredients.push(ing);
+      items.push(ing);
       const tbody = table.querySelector('tbody');
-      tbody.append(renderRow(ing, bd.ingredients.length - 1));
-      refreshTotals();
+      tbody.append(renderRow(ing, items.length - 1));
+      refreshTableTotals();
+      renderCalorie();
+      renderMacros();
       const nameInput = tbody.lastElementChild.querySelector('.ingredient-name-input');
       if (nameInput) nameInput.focus();
     });
@@ -627,18 +931,20 @@ const chartData=document.querySelector('#chart-data');if(chartData){const charts
 
   if (applyBtn) {
     applyBtn.addEventListener('click', () => {
+      // Apply uses the portion-adjusted totals (the user's "you ate" value).
       const totals = computeTotals();
       const form = document.querySelector('form.card[method="post"]');
       if (!form) return;
       for (const k of COLS) {
         const input = form.querySelector(`input[name="${k}"]`);
         if (!input) continue;
-        const allUnknown = bd.ingredients.every((ing) => {
-          const row = computeRow(ing);
+        const allUnknown = items.every((ing) => {
+          const row = computeItem(ing);
           return row == null || row[k] == null;
         });
         // Unknown nutrients stay empty so the saved entry keeps NULL.
-        input.value = allUnknown ? '' : String(totals[k]);
+        if (allUnknown) { input.value = ''; continue; }
+        input.value = (k === 'kcal' || k === 'sodium') ? String(Math.round(totals[k])) : String(round1(totals[k]));
       }
       const saveBtn = form.querySelector('button[type="submit"], button:not([type="button"])');
       if (saveBtn) saveBtn.scrollIntoView({ block: 'center', behavior: 'smooth' });
