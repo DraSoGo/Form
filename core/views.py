@@ -887,13 +887,15 @@ def trends(request):
         days = int(request.GET.get("days", 30))
     except ValueError:
         days = 30
-    if days not in [7, 14, 30]:
+    if days not in [7, 14, 30, 0]:
         days = 30
-    start = timezone.now() - timedelta(days=days)
+    # days=0 means "all history": no lower bound on the window.
+    start = None if days == 0 else timezone.now() - timedelta(days=days)
     groups = {}
-    for entry in BodyMeasurement.objects.filter(
-        user=request.user, recorded_at__gte=start
-    ).order_by("recorded_at"):
+    body_qs = BodyMeasurement.objects.filter(user=request.user)
+    if start is not None:
+        body_qs = body_qs.filter(recorded_at__gte=start)
+    for entry in body_qs.order_by("recorded_at"):
         for metric in ["weight", "body_fat", "muscle"]:
             value = getattr(entry, metric)
             if value is not None:
@@ -907,23 +909,40 @@ def trends(request):
                 )
     today = timezone.localdate()
     daily = []
-    for offset in reversed(range(days)):
-        date = today - timedelta(days=offset)
-        day_start = timezone.make_aware(datetime.combine(date, time.min))
-        values = nutrition_totals(
-            request.user, day_start, day_start + timedelta(days=1)
-        )
-        daily.append({"date": date.strftime("%d %b"), **values})
+    if days == 0:
+        # All history: one point per day with logged food, earliest to latest.
+        first = FoodEntry.objects.filter(user=request.user).order_by("recorded_at").first()
+        if first:
+            first_day = timezone.localtime(first.recorded_at).date()
+            span = (today - first_day).days + 1
+        else:
+            span = 1
+        for offset in reversed(range(span)):
+            date = today - timedelta(days=offset)
+            day_start = timezone.make_aware(datetime.combine(date, time.min))
+            values = nutrition_totals(
+                request.user, day_start, day_start + timedelta(days=1)
+            )
+            daily.append({"date": date.strftime("%d %b"), **values})
+    else:
+        for offset in reversed(range(days)):
+            date = today - timedelta(days=offset)
+            day_start = timezone.make_aware(datetime.combine(date, time.min))
+            values = nutrition_totals(
+                request.user, day_start, day_start + timedelta(days=1)
+            )
+            daily.append({"date": date.strftime("%d %b"), **values})
     # Only days with logged food become chart points; unlogged days would
     # otherwise draw misleading zeros across the whole range.
     logged = [d for d in daily if d["calories"] > 0]
     groups["Calories"] = [{"date": d["date"], "value": d["calories"]} for d in logged]
     groups["Protein"] = [{"date": d["date"], "value": d["protein"]} for d in logged]
+    sleep_qs = SleepEntry.objects.filter(user=request.user).order_by("date")
+    if start is not None:
+        sleep_qs = sleep_qs.filter(date__gte=start.date())
     groups["Sleep"] = [
         {"date": s.date.strftime("%d %b"), "value": float(s.hours)}
-        for s in SleepEntry.objects.filter(
-            user=request.user, date__gte=start.date()
-        ).order_by("date")
+        for s in sleep_qs
     ]
     performance = []
     for exercise in Exercise.objects.filter(user=request.user):
@@ -932,12 +951,13 @@ def trends(request):
                 session__user=request.user,
                 exercise=exercise,
                 completed=True,
-                session__started_at__gte=start,
             )
             .exclude(set_type="warmup")
             .select_related("session")
             .order_by("session__started_at")
         )
+        if start is not None:
+            sets = sets.filter(session__started_at__gte=start)
         entries = [
             {
                 "date": s.session.started_at.strftime("%d %b"),
@@ -957,11 +977,18 @@ def trends(request):
                 }
             )
     # Summary cards
-    workout_count = WorkoutSession.objects.filter(
-        user=request.user, started_at__gte=start
-    ).count()
+    workout_qs = WorkoutSession.objects.filter(user=request.user)
+    if start is not None:
+        workout_qs = workout_qs.filter(started_at__gte=start)
+    workout_count = workout_qs.count()
+    span_for_avg = days if days > 0 else max(
+        1, (today - timezone.localtime(
+            workout_qs.order_by("started_at").values_list("started_at", flat=True).first()
+            or timezone.now()
+        ).date()).days + 1
+    )
     workout_sub = (
-        f"{round(workout_count / days * 7, 1)} per week"
+        f"{round(workout_count / span_for_avg * 7, 1)} per week"
         if workout_count else "No sessions in this period"
     )
 
@@ -969,7 +996,10 @@ def trends(request):
     if logged_days:
         avg_calories = int(round(sum(d["calories"] for d in logged_days) / len(logged_days)))
         calories_value = f"{avg_calories} kcal"
-        calories_sub = f"{len(logged_days)} of {days} days logged"
+        calories_sub = (
+            f"{len(logged_days)} of all days logged" if days == 0
+            else f"{len(logged_days)} of {days} days logged"
+        )
     else:
         calories_value = "—"
         calories_sub = "No food logged"
@@ -983,11 +1013,12 @@ def trends(request):
         sleep_value = "—"
         sleep_sub = "0 nights recorded"
 
-    weigh_ins = list(
-        BodyMeasurement.objects.filter(
-            user=request.user, recorded_at__gte=start, weight__isnull=False
-        ).order_by("recorded_at")
-    )
+    weigh_qs = BodyMeasurement.objects.filter(
+        user=request.user, weight__isnull=False
+    ).order_by("recorded_at")
+    if start is not None:
+        weigh_qs = weigh_qs.filter(recorded_at__gte=start)
+    weigh_ins = list(weigh_qs)
     if len(weigh_ins) >= 2:
         change = float(weigh_ins[-1].weight) - float(weigh_ins[0].weight)
         if change > 0:
