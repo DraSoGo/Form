@@ -196,6 +196,7 @@ class FoodEntry(Nutrients):
     uncertainty = models.TextField(blank=True)
     image = models.CharField(max_length=250, blank=True)
     image_status = models.CharField(max_length=30, default="none")
+    ai_breakdown = models.JSONField(null=True, blank=True)
 
     class Meta:
         ordering = ["-recorded_at"]
