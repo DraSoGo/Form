@@ -1051,14 +1051,6 @@ nav a[aria-current="page"]::after {
 .breakdown-advanced {
   margin: 12px 0 0;
 }
-.breakdown-advanced > summary {
-  font-size: 14px;
-  font-weight: 650;
-  padding: 6px 0;
-  min-height: 36px;
-  color: var(--muted);
-}
-.breakdown-advanced[open] > summary { color: var(--ink); }
 
 /* The breakdown details card is the standard .card + .breakdown modifier */
 .breakdown {
@@ -2255,16 +2247,47 @@ main { min-width: 0; }
   white-space: nowrap;
 }
 
-/* Correct-food page: summary card + inner advanced details */
+/* Correct-food page: summary card + inner details sections.
+   Shared summary style for BOTH "Edit details & nutrition" and
+   "Advanced · Food Breakdown" — identical height, padding, font and
+   disclosure icon placement. */
 .meal-summary-card { margin-bottom: 16px; }
 .meal-summary-card .meal-primary { margin: 0; }
 .card-inner-details { margin: 14px 0 4px; }
 .card-inner-details > summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
   font-size: 14px;
   font-weight: 650;
+  line-height: 1.3;
   padding: 8px 0;
-  min-height: 40px;
+  min-height: 44px;
   color: var(--muted);
   cursor: pointer;
+  border-radius: var(--radius-sm);
+  transition: color .15s ease;
+}
+.card-inner-details > summary:hover { color: var(--ink); }
+.card-inner-details > summary:focus-visible {
+  outline: 3px solid var(--primary-hover);
+  outline-offset: 2px;
+  color: var(--ink);
 }
 .card-inner-details[open] > summary { color: var(--ink); }
+/* Disclosure icon: shared + / − affordance at the far right, identical
+   position for both sections (overriding the generic summary::after). */
+.card-inner-details > summary::after {
+  content: "+";
+  margin-left: auto;
+  font-size: 18px;
+  font-weight: 600;
+  line-height: 1;
+  color: var(--muted);
+  transition: transform .2s ease;
+}
+.card-inner-details[open] > summary::after { content: "−"; }
+@media (prefers-reduced-motion: reduce) {
+  .card-inner-details > summary,
+  .card-inner-details > summary::after { transition: none; }
+}

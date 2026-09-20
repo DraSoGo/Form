@@ -38,7 +38,7 @@
   {{ form.recorded_at.as_field_group }}
 
   {# ── Editable nutrition & details — collapsed by default when AI result exists ── #}
-  <details {% if form.errors or not entry or not entry.ai_breakdown %}open{% endif %}>
+  <details class="card-inner-details" {% if form.errors or not entry or not entry.ai_breakdown %}open{% endif %}>
     <summary>Edit details &amp; nutrition</summary>
     <p class="helptext">Name, portion and nutrition values. Sugar and Sodium can stay empty if unknown.</p>
     {{ form.name.as_field_group }}{{ form.quantity.as_field_group }}
@@ -51,7 +51,7 @@
 
   {# ── Advanced: ingredient-level breakdown table ── #}
   {% if entry and entry.ai_breakdown %}
-    <details class="breakdown-advanced card-inner-details">
+    <details class="card-inner-details">
       <summary>Advanced · Food Breakdown</summary>
       <div class="table-wrap breakdown-table-wrap">
         <table class="breakdown-table" id="food-breakdown-table"></table>
