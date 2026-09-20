@@ -283,12 +283,17 @@ def nutrition(request):
     if active_status and active_status not in valid_states:
         active_status = ""
 
-    foods = FoodEntry.objects.filter(
+    foods_qs = FoodEntry.objects.filter(
         user=request.user, recorded_at__gte=start, recorded_at__lt=end
     )
     if active_status:
-        foods = foods.filter(state=active_status)
-    foods = foods.order_by("-recorded_at")[:100]
+        foods_qs = foods_qs.filter(state=active_status)
+
+    totals_incomplete = foods_qs.filter(
+        models.Q(calories__isnull=True) | models.Q(sugar__isnull=True) | models.Q(sodium__isnull=True)
+    ).exists()
+
+    foods = foods_qs.order_by("-recorded_at")[:100]
 
     return render(
         request,
@@ -302,6 +307,7 @@ def nutrition(request):
             "selected_date": selected_date,
             "active_status": active_status,
             "state_choices": FoodEntry._meta.get_field("state").choices,
+            "totals_incomplete": totals_incomplete,
         },
     )
 

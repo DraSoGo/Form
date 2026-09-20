@@ -33,6 +33,28 @@ class NutritionEstimate(Strict):
         if not self.calories_low <= self.calories <= self.calories_high:
             raise ValueError('Calories must lie within range')
         return self
+
+
+class IngredientEstimate(Strict):
+    ref_key: str
+    name_th: str = ""
+    weight_g: float = Field(ge=0, le=1500)
+    min_g: float = Field(ge=0, le=1500)
+    max_g: float = Field(ge=0, le=1500)
+    user_confirmed: bool = False
+
+    @model_validator(mode='after')
+    def ref_key_known(self):
+        from core.nutrition_ref import REFERENCE
+        if self.ref_key not in REFERENCE:
+            raise ValueError(f"Unknown ref_key: {self.ref_key}")
+        return self
+
+
+class NutritionEstimateV2(Strict):
+    ingredients: list[IngredientEstimate] = Field(min_length=1, max_length=15)
+    confidence: Literal['low', 'medium', 'high']
+    uncertainty_factors_thai: list[str] = Field(default_factory=list, max_length=6)
 class DailySummary(Strict):
     summary: Text
     highlights: list[Text] = Field(default_factory=list,max_length=8)
@@ -45,4 +67,4 @@ class ExerciseMetadata(Strict):
     primary_muscles: list[Annotated[str, Field(min_length=1,max_length=79)]] = Field(min_length=1,max_length=10)
     secondary_muscles: list[Annotated[str, Field(min_length=1,max_length=79)]] = Field(default_factory=list,max_length=10)
     classification: Literal['compound','isolation']
-SCHEMAS = dict(food=NutritionEstimate, daily=DailySummary, workout=WorkoutAnalysis,body=BodyTrendAnalysis,chat=ChatAnswer,exercise=ExerciseMetadata)
+SCHEMAS = dict(food=NutritionEstimateV2, daily=DailySummary, workout=WorkoutAnalysis,body=BodyTrendAnalysis,chat=ChatAnswer,exercise=ExerciseMetadata)

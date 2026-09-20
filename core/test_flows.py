@@ -588,6 +588,17 @@ class CoreFlowTests(TestCase):
         self.assertEqual(response.context['active_status'], '')
         self.assertEqual(len(list(response.context['foods'])), 2)
 
+    def test_nutrition_totals_incomplete_flag(self):
+        FoodEntry.objects.create(user=self.user, name='Complete', calories=500, sugar=Decimal('10'), sodium=Decimal('500'))
+        FoodEntry.objects.create(user=self.user, name='Missing sodium', calories=300, sugar=Decimal('5'))
+        response = self.client.get('/nutrition/')
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.context['totals_incomplete'])
+
+        FoodEntry.objects.filter(user=self.user, name='Missing sodium').update(sodium=Decimal('300'))
+        response = self.client.get('/nutrition/')
+        self.assertFalse(response.context['totals_incomplete'])
+
     def test_body_base_form_saves_without_advanced_fields(self):
         payload = {
             'recorded_at': timezone.localtime().strftime('%Y-%m-%dT%H:%M'),
