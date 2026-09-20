@@ -918,6 +918,148 @@ nav a[aria-current="page"]::after {
   font-weight: 500;
 }
 
+/* Meal-oriented primary view (food_form.html) — header, portion,
+   calorie, macros, unmatched. The advanced ingredient-details table
+   sits inside a nested <details class="breakdown-advanced">. */
+.meal-hero { margin: 4px 0 12px; }
+.meal-name {
+  font-family: var(--font-display);
+  font-size: clamp(22px, 3vw, 28px);
+  font-weight: 750;
+  letter-spacing: -.4px;
+  line-height: 1.15;
+  margin: 0 0 10px;
+  color: var(--ink);
+}
+.meal-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0 0 14px;
+}
+.meal-chips .chip { margin: 0; }
+
+.incomplete-warning {
+  background: rgba(217, 117, 110, .10);
+  border: 1px solid rgba(217, 117, 110, .45);
+  border-radius: var(--radius-sm);
+  padding: 12px 14px;
+  margin: 0 0 14px;
+  color: var(--ink);
+  font-size: 14px;
+}
+.incomplete-warning strong { color: var(--danger); }
+.incomplete-warning p { margin: 4px 0 0; }
+
+.portion-selector { margin: 4px 0 14px; }
+.portion-selector .seg-custom {
+  display: inline-flex;
+  align-items: center;
+  font-size: 13px;
+  color: var(--muted);
+  padding: 0 12px;
+  min-height: 36px;
+}
+.portion-selector .seg-custom input {
+  font-size: 14px;
+  color: var(--ink);
+  background: var(--surface);
+}
+
+.meal-kcal {
+  font-family: var(--font-display);
+  font-size: clamp(32px, 5vw, 44px);
+  font-weight: 700;
+  letter-spacing: -1.2px;
+  line-height: 1.05;
+  margin: 6px 0 2px;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+.meal-kcal.is-unknown { color: var(--muted); font-style: italic; }
+.meal-kcal-range {
+  font-size: 14px;
+  margin: 0 0 14px;
+}
+
+.macro-strip {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  padding: 14px 16px;
+  background: var(--highlight);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  margin: 4px 0 14px;
+}
+@media (min-width: 720px) {
+  .macro-strip { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+.macro-strip > div { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.macro-strip dt {
+  font-size: 11px;
+  letter-spacing: 1.2px;
+  text-transform: uppercase;
+  color: var(--muted);
+  font-weight: 700;
+  margin: 0;
+}
+.macro-strip dd {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: 18px;
+  font-weight: 700;
+  letter-spacing: -.4px;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+  line-height: 1.1;
+}
+.macro-strip dd.is-unknown { color: var(--muted); font-style: italic; font-weight: 600; }
+
+.meal-uncertainty {
+  font-size: 12.5px;
+  margin: 0 0 6px;
+}
+
+.unmatched-list { margin: 14px 0; }
+.unmatched-list > p { margin: 0 0 8px; }
+.unmatched-item {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 10px 12px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  margin: 6px 0;
+}
+.unmatched-item.is-major {
+  border-color: rgba(217, 117, 110, .45);
+  background: rgba(217, 117, 110, .06);
+}
+.unmatched-name { font-weight: 600; color: var(--ink); }
+.unmatched-item .chip { margin: 0; }
+.unmatched-note {
+  flex-basis: 100%;
+  font-size: 12.5px;
+  margin: 4px 0 0;
+}
+
+/* Nested advanced details inside the main breakdown details — slightly
+   tighter, no extra margin since the parent details already pads. */
+.breakdown-advanced {
+  margin: 12px 0 0;
+}
+.breakdown-advanced > summary {
+  font-size: 14px;
+  font-weight: 650;
+  padding: 6px 0;
+  min-height: 36px;
+  color: var(--muted);
+}
+.breakdown-advanced[open] > summary { color: var(--ink); }
+
 /* The breakdown details card is the standard .card + .breakdown modifier */
 .breakdown {
   margin-top: 14px;
