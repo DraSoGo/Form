@@ -1,6 +1,7 @@
 {% extends "core/base.html" %}
+{% block title %}{{ title }} · Form{% endblock %}
 {% block content %}
-<p class="eyebrow">NOURISH</p><h1>{{ title }}</h1>
+<p class="eyebrow">Nourish</p><h1>{{ title }}</h1>
 {% if entry.image %}
 <section class="card">
   <img class="food-photo" src="/photos/{{ entry.pk }}/" alt="Your food photograph">
@@ -26,9 +27,28 @@
     <div class="form-grid">
       {% for field in form %}{% if field.name != 'name' and field.name != 'quantity' and field.name != 'note' and field.name != 'recorded_at' and field.name != 'state' %}<div>{{ field.as_field_group }}</div>{% endif %}{% endfor %}
     </div>
+    <p class="helptext muted">Sugar and Sodium can stay empty if the estimate is unknown — leave blank or enter your own value.</p>
     {{ form.state.as_field_group }}
     <label class="inline checkbox-save-library"><input name="save_library" type="checkbox" {% if request.POST.save_library %}checked{% endif %}> Save these values to my food library</label>
   </details>
+
+  {# ── Food Breakdown (renders from entry.ai_breakdown JSON via app.js) ── #}
+  {% if entry and entry.ai_breakdown %}
+    <details class="card breakdown" open>
+      <summary>Food Breakdown / รายละเอียดอาหาร</summary>
+      <div id="food-breakdown-meta" class="breakdown-meta"></div>
+      <div class="table-wrap breakdown-table-wrap">
+        <table class="breakdown-table" id="food-breakdown-table"></table>
+      </div>
+      <div class="breakdown-actions actions">
+        <button type="button" id="breakdown-recalc" class="secondary">Recalculate</button>
+        <button type="button" id="breakdown-apply" class="secondary">Apply to nutrition fields</button>
+      </div>
+      <p class="breakdown-sources muted">Sources: USDA FDC / Thai typical values (curated)</p>
+      {% with bd=entry.ai_breakdown %}{{ bd|json_script:"food-breakdown-data" }}{% endwith %}
+    </details>
+  {% endif %}
+
   <div class="actions"><button>Save food</button><a href="/nutrition/">Back to diary</a></div>
 </form>
 {% if entry %}<form class="card" method="post" action="/delete/food/{{ entry.pk }}/">{% csrf_token %}<button class="secondary">Delete food entry</button></form>{% endif %}

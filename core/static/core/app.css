@@ -907,10 +907,110 @@ nav a[aria-current="page"]::after {
 }
 
 /* =========================================================================
-   Day detail page (day_detail.html)
+   Food Breakdown / Food diary Unknown chip + kcal range
    ========================================================================= */
 
-/* h1 row that wraps the day-name link + Today chip */
+/* Reused on the food diary rows for sugar/sodium when value is None */
+.food-kcal-range {
+  display: block;
+  font-size: 11px;
+  margin-top: 2px;
+  font-weight: 500;
+}
+
+/* The breakdown details card is the standard .card + .breakdown modifier */
+.breakdown {
+  margin-top: 14px;
+}
+.breakdown-meta {
+  font-size: 13px;
+  color: var(--ink);
+  margin: 6px 0 10px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+.breakdown-meta .chip { margin: 0; }
+
+.breakdown-table-wrap {
+  /* Reuse .table-wrap styling but keep tighter padding to fit on mobile */
+  margin-bottom: 10px;
+}
+.breakdown-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+.breakdown-table th,
+.breakdown-table td {
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--border);
+  text-align: left;
+  white-space: nowrap;
+  vertical-align: middle;
+}
+.breakdown-table thead th {
+  font-size: 11px;
+  letter-spacing: 1.2px;
+  text-transform: uppercase;
+  color: var(--muted);
+  font-weight: 700;
+  background: var(--canvas);
+}
+.breakdown-table tbody tr:last-child td { border-bottom: 0; }
+.breakdown-table .ingredient-name {
+  font-weight: 600;
+  color: var(--ink);
+  white-space: normal;
+  min-width: 140px;
+}
+.breakdown-table .ingredient-name .chip { margin-left: 6px; vertical-align: middle; }
+.breakdown-table .weight-input {
+  width: 72px;
+  min-height: 40px;
+  padding: 6px 8px;
+  font-size: 14px;
+  margin: 0;
+}
+.breakdown-table .num-cell { text-align: right; font-variant-numeric: tabular-nums; }
+.breakdown-table .num-cell.is-unknown { color: var(--muted); font-style: italic; }
+.breakdown-table tfoot td {
+  border-top: 2px solid var(--border);
+  font-weight: 700;
+  color: var(--ink);
+}
+.breakdown-table tfoot .totals-name { text-align: left; }
+.breakdown-table tfoot .range-line {
+  font-size: 11.5px;
+  font-weight: 600;
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--muted);
+  text-align: right;
+  padding-top: 4px;
+}
+.breakdown-table .source-cell {
+  color: var(--muted);
+  font-size: 11.5px;
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.breakdown-actions {
+  gap: 8px;
+  margin: 12px 0;
+  flex-wrap: wrap;
+}
+.breakdown-sources {
+  font-size: 12px;
+  margin: 4px 0 0;
+}
+
+/* =========================================================================
+   Day detail page (day_detail.html)
+   ========================================================================= */
 .day-name-link {
   display: flex;
   align-items: baseline;
