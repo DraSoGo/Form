@@ -19,11 +19,11 @@ def model_form(model,fields=None):
 
 
 class BodyForm(StyledModelForm):
-    """Base measurement form: recorded time, source, weight, body fat."""
+    """Base measurement form: recorded time, source, weight."""
 
     class Meta:
         model = BodyMeasurement
-        fields = ["recorded_at", "source", "weight", "body_fat"]
+        fields = ["recorded_at", "source", "weight"]
 
 
 class AdvancedBodyForm(BodyForm):
@@ -32,7 +32,7 @@ class AdvancedBodyForm(BodyForm):
 
     class Meta(BodyForm.Meta):
         fields = BodyForm.Meta.fields + [
-            "muscle", "visceral_fat", "body_age", "bmr", "bmi"
+            "body_fat", "muscle", "visceral_fat", "body_age", "bmr", "bmi"
         ]
 
 

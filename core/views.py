@@ -141,7 +141,7 @@ def body(request):
             "form": form,
             "advanced_form": advanced_form,
             "advanced_fields": [
-                advanced_form[f] for f in ("muscle", "visceral_fat", "body_age", "bmr", "bmi")
+                advanced_form[f] for f in ("body_fat", "muscle", "visceral_fat", "body_age", "bmr", "bmi")
             ],
             "latest": latest_summary,
             "measurements": BodyMeasurement.objects.filter(user=request.user)[:100],
