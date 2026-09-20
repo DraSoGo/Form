@@ -285,3 +285,282 @@ const chartData=document.querySelector('#chart-data');if(chartData){const charts
   window.addEventListener('hashchange', focusOnHash);
   if (location.hash) focusOnHash();
 })();
+
+// =========================================================================
+// Food Breakdown (entry.ai_breakdown JSON)
+// -------------------------------------------------------------------------
+// Reads the JSON emitted by food_form.html and renders a per-ingredient
+// table with editable weights, live recompute, totals row, kcal-range
+// line, and "Apply to nutrition fields" that copies the totals into the
+// main form's seven nutrient inputs. No backend calls — fully client
+// deterministic. Unknown values stay "Unknown / ยังประเมินไม่ได้" in the
+// table and clear the corresponding main-form input on Apply.
+// =========================================================================
+
+(function initFoodBreakdown(){
+  const dataEl = document.getElementById('food-breakdown-data');
+  if (!dataEl) return;
+
+  let bd;
+  try { bd = JSON.parse(dataEl.textContent); }
+  catch (e) { return; }
+  if (!bd || !Array.isArray(bd.ingredients)) return;
+
+  const meta = document.getElementById('food-breakdown-meta');
+  const table = document.getElementById('food-breakdown-table');
+  const recalcBtn = document.getElementById('breakdown-recalc');
+  const applyBtn = document.getElementById('breakdown-apply');
+  if (!table) return;
+
+  const COLS = ['kcal', 'protein', 'carbs', 'fat', 'fiber', 'sodium', 'sugar'];
+  const UNITS = { kcal: 'kcal', protein: 'g', carbs: 'g', fat: 'g', fiber: 'g', sodium: 'mg', sugar: 'g' };
+
+  function round1(n) { return Math.round(n * 10) / 10; }
+
+  function computeRow(ing) {
+    const out = {};
+    const weight = Number(ing.weight_g);
+    if (!Number.isFinite(weight) || weight <= 0) return null;
+    for (const k of COLS) {
+      const per100 = ing.per_100g && ing.per_100g[k];
+      out[k] = (per100 == null || isNaN(per100)) ? null : round1(weight / 100 * per100);
+    }
+    return out;
+  }
+
+  function renderMeta() {
+    if (!meta) return;
+    meta.replaceChildren();
+    const conf = bd.confidence || 'unknown';
+    const confChip = document.createElement('span');
+    confChip.className = `chip ${
+      conf === 'high' ? 'completed' :
+      conf === 'medium' ? 'in-progress' :
+      conf === 'low' ? 'awaiting' : 'planned'
+    }`;
+    confChip.textContent = `Confidence: ${conf}`;
+    meta.append(confChip);
+
+    if (Array.isArray(bd.range_kcal) && bd.range_kcal.length === 2) {
+      const lo = Math.round(bd.range_kcal[0]);
+      const hi = Math.round(bd.range_kcal[1]);
+      const span = document.createElement('span');
+      span.className = 'muted';
+      span.textContent = `≈ ${lo}–${hi} kcal`;
+      meta.append(span);
+    }
+
+    if (Array.isArray(bd.unknown_fields) && bd.unknown_fields.length) {
+      const u = document.createElement('span');
+      u.className = 'muted';
+      u.textContent = `Unknown: ${bd.unknown_fields.join(', ')}`;
+      meta.append(u);
+    }
+
+    // Uncertainty factors (Thai text, rendered as-is per the contract).
+    if (Array.isArray(bd.uncertainty_factors_thai) && bd.uncertainty_factors_thai.length) {
+      for (const note of bd.uncertainty_factors_thai) {
+        const p = document.createElement('p');
+        p.className = 'muted';
+        p.style.margin = '4px 0 0';
+        p.style.fontSize = '12.5px';
+        p.textContent = note;
+        meta.append(p);
+      }
+    }
+  }
+
+  function renderHeader() {
+    const thead = document.createElement('thead');
+    const tr = document.createElement('tr');
+    const headCells = ['Ingredient', 'Edible portion (g)', 'kcal', 'Protein', 'Carbs', 'Fat', 'Fiber', 'Sodium', 'Sugar', 'Source'];
+    for (const label of headCells) {
+      const th = document.createElement('th');
+      th.textContent = label;
+      if (label !== 'Ingredient' && label !== 'Source') th.className = 'num-cell';
+      if (label === 'Edible portion (g)') th.style.textAlign = 'right';
+      tr.append(th);
+    }
+    thead.append(tr);
+    table.append(thead);
+  }
+
+  function chipSpan(kind, text) {
+    const span = document.createElement('span');
+    span.className = `chip ${kind}`;
+    span.textContent = text;
+    return span;
+  }
+
+  function renderRow(ing, idx) {
+    const tr = document.createElement('tr');
+    tr.dataset.idx = String(idx);
+
+    const nameTd = document.createElement('td');
+    nameTd.className = 'ingredient-name';
+    const title = document.createElement('span');
+    title.textContent = ing.name_th || ing.ref_key || '';
+    nameTd.append(title);
+    nameTd.append(chipSpan(ing.user_confirmed ? 'completed' : 'awaiting',
+                           ing.user_confirmed ? 'confirmed' : 'estimated'));
+    tr.append(nameTd);
+
+    const weightTd = document.createElement('td');
+    weightTd.style.textAlign = 'right';
+    const input = document.createElement('input');
+    input.type = 'number';
+    input.className = 'weight-input num-cell';
+    input.min = String(ing.min_g || 0);
+    input.max = String(ing.max_g || 9999);
+    input.step = '1';
+    input.value = String(ing.weight_g || ing.min_g || 0);
+    input.setAttribute('aria-label', `Edible portion in grams for ${ing.name_th || ing.ref_key}`);
+    input.addEventListener('input', () => {
+      ing.weight_g = Number(input.value) || 0;
+      refreshTotals();
+    });
+    weightTd.append(input);
+    tr.append(weightTd);
+
+    for (const k of COLS) {
+      const td = document.createElement('td');
+      td.className = 'num-cell';
+      td.dataset.col = k;
+      tr.append(td);
+    }
+
+    const sourceTd = document.createElement('td');
+    sourceTd.className = 'source-cell';
+    sourceTd.title = ing.source || '';
+    sourceTd.textContent = ing.source || '';
+    tr.append(sourceTd);
+
+    return tr;
+  }
+
+  function renderBody() {
+    const tbody = document.createElement('tbody');
+    bd.ingredients.forEach((ing, idx) => {
+      tbody.append(renderRow(ing, idx));
+    });
+    table.append(tbody);
+  }
+
+  function renderFoot() {
+    const tfoot = document.createElement('tfoot');
+    const tr = document.createElement('tr');
+    const label = document.createElement('td');
+    label.className = 'totals-name';
+    label.colSpan = 2;
+    label.textContent = 'Totals';
+    tr.append(label);
+    for (const k of COLS) {
+      const td = document.createElement('td');
+      td.className = 'num-cell';
+      td.dataset.totalCol = k;
+      tr.append(td);
+    }
+    const sourcePlaceholder = document.createElement('td');
+    sourcePlaceholder.colSpan = 1;
+    tr.append(sourcePlaceholder);
+    tfoot.append(tr);
+
+    const rangeTr = document.createElement('tr');
+    const rangeLabel = document.createElement('td');
+    rangeLabel.className = 'range-line';
+    rangeLabel.colSpan = 2;
+    rangeLabel.textContent = '';
+    rangeTr.append(rangeLabel);
+    const rangeSpan = document.createElement('td');
+    rangeSpan.className = 'range-line';
+    rangeSpan.colSpan = 8;
+    rangeSpan.dataset.rangeCell = '1';
+    rangeTr.append(rangeSpan);
+    tfoot.append(rangeTr);
+
+    table.append(tfoot);
+  }
+
+  function computeTotals() {
+    const totals = {};
+    for (const k of COLS) totals[k] = 0;
+    for (const ing of bd.ingredients) {
+      const row = computeRow(ing);
+      if (!row) continue;
+      for (const k of COLS) {
+        if (row[k] != null) totals[k] += row[k];
+      }
+    }
+    for (const k of COLS) totals[k] = round1(totals[k]);
+    return totals;
+  }
+
+  function refreshTotals() {
+    const totals = computeTotals();
+    const rows = table.querySelectorAll('tbody tr');
+    rows.forEach((tr) => {
+      const idx = Number(tr.dataset.idx);
+      const ing = bd.ingredients[idx];
+      const row = computeRow(ing);
+      for (const k of COLS) {
+        const cell = tr.querySelector(`td[data-col="${k}"]`);
+        if (!cell) continue;
+        if (row == null || row[k] == null) {
+          cell.textContent = 'Unknown';
+          cell.classList.add('is-unknown');
+          cell.removeAttribute('title');
+        } else {
+          cell.textContent = `${row[k]} ${UNITS[k]}`;
+          cell.classList.remove('is-unknown');
+          cell.title = `${row[k]} ${UNITS[k]}`;
+        }
+      }
+    });
+    for (const k of COLS) {
+      const cell = table.querySelector(`td[data-total-col="${k}"]`);
+      if (!cell) continue;
+      const unknown = bd.unknown_fields && bd.unknown_fields.includes(k);
+      if (unknown) {
+        cell.textContent = 'Unknown';
+        cell.classList.add('is-unknown');
+      } else {
+        cell.textContent = `${totals[k]} ${UNITS[k]}`;
+        cell.classList.remove('is-unknown');
+      }
+    }
+    const rangeCell = table.querySelector('[data-range-cell]');
+    if (rangeCell && Array.isArray(bd.range_kcal) && bd.range_kcal.length === 2) {
+      rangeCell.textContent = `≈ ${Math.round(bd.range_kcal[0])}–${Math.round(bd.range_kcal[1])} kcal`;
+    }
+  }
+
+  // Build the table.
+  renderMeta();
+  renderHeader();
+  renderBody();
+  renderFoot();
+  refreshTotals();
+
+  if (recalcBtn) recalcBtn.addEventListener('click', refreshTotals);
+
+  if (applyBtn) {
+    applyBtn.addEventListener('click', () => {
+      const totals = computeTotals();
+      // Find the main form's nutrient inputs by `name` attribute. The form
+      // is rendered by Django as <input name="calories" id="id_calories"> etc.
+      const form = document.querySelector('form.card[method="post"]');
+      if (!form) return;
+      for (const k of COLS) {
+        const input = form.querySelector(`input[name="${k}"]`);
+        if (!input) continue;
+        const unknown = bd.unknown_fields && bd.unknown_fields.includes(k);
+        // For sugar/sodium, "unknown" means leave the main input empty so the
+        // saved entry keeps NULL — exactly what the contract specifies.
+        input.value = unknown ? '' : String(totals[k]);
+      }
+      // Scroll the user to the (now-filled) Save button so they can confirm.
+      const saveBtn = form.querySelector('button[type="submit"], button:not([type="button"])');
+      if (saveBtn) saveBtn.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    });
+  }
+})();
