@@ -23,17 +23,43 @@ def compute_meal(items, dish_name="", strategy="components", unmatched=None, com
     Each dict must contain at least 'ref_key' and 'weight_g'.
     Optional 'min_g'/'max_g' are used for the kcal range.
     Optional 'fraction_consumed' (0-1) scales nutrients.
+    Optional 'custom_values' supplies hand-entered per-item nutrients that
+    override the reference computation (user-added custom ingredients).
     The resolved per_100g dict is returned inside each item.
     """
     unmatched = unmatched or []
     resolved = []
     for item in items:
+        weight_g = float(item.get("weight_g", 0))
+        fraction = float(item.get("fraction_consumed", 1.0))
+        cv = item.get("custom_values")
+        if isinstance(cv, dict) and any(v is not None for v in cv.values()):
+            # User-entered custom ingredient: values are already final for
+            # the given portion — scale only by the consumed fraction.
+            scaled = {}
+            for nutrient in NUTRIENTS:
+                raw = cv.get(nutrient)
+                scaled[nutrient] = None if raw is None else round(float(raw) * fraction, 2)
+            resolved.append(
+                {
+                    "ref_key": "custom",
+                    "name_th": item.get("name_th", ""),
+                    "source": "User-entered",
+                    "per_100g": {k: None for k in NUTRIENTS},
+                    "weight_g": weight_g,
+                    "min_g": float(item.get("min_g", weight_g)),
+                    "max_g": float(item.get("max_g", weight_g)),
+                    "fraction_consumed": fraction,
+                    "user_confirmed": bool(item.get("user_confirmed", False)),
+                    "custom": True,
+                    "computed": scaled,
+                }
+            )
+            continue
         ref = lookup(item["ref_key"])
         if ref is None:
             raise ValueError(f"Unknown ref_key: {item['ref_key']}")
         per = ref["per_100g"]
-        weight_g = float(item.get("weight_g", 0))
-        fraction = float(item.get("fraction_consumed", 1.0))
         scaled = compute_ingredient(ref, weight_g, fraction)
         resolved.append(
             {

@@ -61,6 +61,9 @@
         <button type="button" id="breakdown-recalc" class="secondary">Recalculate</button>
         <button type="button" id="breakdown-apply" class="secondary">Apply to nutrition fields</button>
       </div>
+      {# Serialized breakdown rides along on Save so the server recomputes
+         totals + completeness from the edited items (single source of truth). #}
+      <input type="hidden" name="breakdown_json" id="breakdown-json">
       <p class="breakdown-sources muted">Sources: USDA FDC / Thai typical values (curated)</p>
     </details>
   {% endif %}
