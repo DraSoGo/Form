@@ -32,14 +32,20 @@ def compute_meal(items, dish_name="", strategy="components", unmatched=None, com
     for item in items:
         weight_g = float(item.get("weight_g", 0))
         fraction = float(item.get("fraction_consumed", 1.0))
+        ref_key = str(item.get("ref_key") or "")
         cv = item.get("custom_values")
-        if isinstance(cv, dict) and any(v is not None for v in cv.values()):
+        is_custom = ref_key == "custom" or item.get("custom") is True or (
+            cv and isinstance(cv, dict) and any(v is not None for v in cv.values())
+        )
+        if is_custom:
             # User-entered custom ingredient: values are already final for
             # the given portion — scale only by the consumed fraction.
+            # Fields the user left blank stay None (unknown), never zero.
+            cv = cv if isinstance(cv, dict) else {}
             scaled = {}
             for nutrient in NUTRIENTS:
                 raw = cv.get(nutrient)
-                scaled[nutrient] = None if raw is None else round(float(raw) * fraction, 2)
+                scaled[nutrient] = None if raw in (None, "") else round(float(raw) * fraction, 2)
             resolved.append(
                 {
                     "ref_key": "custom",

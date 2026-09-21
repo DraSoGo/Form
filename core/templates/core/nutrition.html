@@ -112,9 +112,7 @@
 <h2>Entries</h2>
 
 {% if foods %}
-  {# The bulk-save form must NOT wrap the list: nested forms are invalid
-     HTML and the parser drops the inner (delete) forms. Checkboxes
-     reference this form via the form="bulk-template" attribute instead. #}
+  {# The bulk-save form must not wrap the list; checkboxes reference it via form="bulk-template". #}
   <form id="bulk-template" method="post" action="/templates/save/">
     {% csrf_token %}
     <div class="actions" style="margin:0 0 14px;flex-wrap:wrap;align-items:end;gap:12px">
