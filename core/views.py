@@ -315,50 +315,57 @@ def nutrition(request):
 
 
 def _recompute_breakdown(request, entry):
-    """Rebuild ai_breakdown from the user-edited breakdown_json payload.
-
-    Returns True when the payload was valid and applied. The recomputed
-    totals are written to BOTH the entry fields and ai_breakdown so the
-    two can never disagree; completeness is re-derived from the remaining
-    unmatched majors (a user who adds the missing ingredient makes the
-    meal complete; confirming alone does not).
-    """
-    import json as _json
-    from .nutrition_ref import REFERENCE
-    from . import nutrition_calc
-
+    """Parse the breakdown_json POST payload and apply it to the entry."""
     raw = request.POST.get("breakdown_json", "").strip()
     if not raw:
         return False
     try:
-        payload = _json.loads(raw)
+        payload = json.loads(raw)
     except (ValueError, TypeError):
         return False
     if not isinstance(payload, dict) or not isinstance(payload.get("items"), list):
         return False
+    return _apply_breakdown(entry, payload)
+
+
+def _apply_breakdown(entry, payload):
+    """Rebuild ai_breakdown from a user-edited breakdown payload dict.
+
+    Returns True when the payload was valid and applied. The recomputed
+    totals are written to BOTH the entry fields and ai_breakdown so the
+    two can never disagree; completeness is re-derived from the remaining
+    unmatched majors (a user who adds the missing ingredient with values
+    makes the meal complete; a name-only row does not).
+    """
+    from .nutrition_ref import REFERENCE
+    from . import nutrition_calc
 
     items = []
     for item in payload["items"][:15]:
         if not isinstance(item, dict):
             continue
-        ref_key = str(item.get("ref_key") or "custom")
-        weight = float(item.get("weight_g") or 0)
-        ing = {
-            "ref_key": ref_key if ref_key in REFERENCE else "custom",
-            "name_th": str(item.get("name_th") or "")[:80],
-            "weight_g": min(weight, 2000),
-            "min_g": min(float(item.get("min_g") or 0), 2000),
-            "max_g": min(float(item.get("max_g") or weight), 2000),
-            "user_confirmed": bool(item.get("user_confirmed")),
-            "fraction_consumed": min(max(float(item.get("fraction_consumed") or 1.0), 0), 1),
-        }
-        cv = item.get("custom_values")
-        if isinstance(cv, dict) and any(v is not None for v in cv.values()):
-            ing["custom_values"] = {
-                k: (None if cv.get(k) in (None, "") else float(cv[k]))
-                for k in ("kcal", "protein", "carbs", "fat", "fiber", "sodium", "sugar")
-                if k in cv
+        try:
+            ref_key = str(item.get("ref_key") or "custom")
+            weight = float(item.get("weight_g") or 0)
+            ing = {
+                "ref_key": ref_key if ref_key in REFERENCE else "custom",
+                "name_th": str(item.get("name_th") or "")[:80],
+                "weight_g": min(weight, 2000),
+                "min_g": min(float(item.get("min_g") or 0), 2000),
+                "max_g": min(float(item.get("max_g") or weight), 2000),
+                "user_confirmed": bool(item.get("user_confirmed")),
+                "fraction_consumed": min(max(float(item.get("fraction_consumed") or 1.0), 0), 1),
             }
+            cv = item.get("custom_values")
+            if isinstance(cv, dict) and any(v is not None for v in cv.values()):
+                ing["custom_values"] = {
+                    k: (None if cv.get(k) in (None, "") else float(cv[k]))
+                    for k in ("kcal", "protein", "carbs", "fat", "fiber", "sodium", "sugar")
+                    if k in cv
+                }
+        except (TypeError, ValueError):
+            # Malformed numbers must not 500 the save; skip the bad row.
+            continue
         if ing["weight_g"] > 0 or ing.get("custom_values"):
             items.append(ing)
     if not items:
@@ -371,11 +378,32 @@ def _recompute_breakdown(request, entry):
         for u in (payload.get("unmatched") or [])[:6]
         if isinstance(u, dict)
     ]
+    # An unmatched component the user has now added as an ingredient WITH
+    # nutrition values is resolved: drop it so the meal can become
+    # complete again. A blank custom row (name only, no values) does not
+    # resolve it — the meal honestly stays incomplete until values exist.
+    resolved_names = set()
+    for i in items:
+        name = i["name_th"].strip().casefold()
+        if not name:
+            continue
+        if i["ref_key"] != "custom" or i.get("custom_values"):
+            resolved_names.add(name)
 
+    def _is_resolved(u):
+        n = u["name_th"].strip().casefold()
+        return bool(n) and any(
+            n == x or (len(n) >= 3 and (n in x or x in n))
+            for x in resolved_names
+        )
+
+    unmatched = [u for u in unmatched if not _is_resolved(u)]
+
+    strategy = payload.get("strategy")
     computed = nutrition_calc.compute_meal(
         items,
         dish_name=str(payload.get("dish_name") or entry.name)[:160],
-        strategy=payload.get("strategy") if payload.get("strategy") in ("whole_dish", "components", "hybrid") else "components",
+        strategy=strategy if strategy in ("whole_dish", "components", "hybrid") else "components",
         unmatched=unmatched,
         completeness="complete",  # re-derived below from unmatched majors
     )
@@ -402,16 +430,15 @@ def _recompute_breakdown(request, entry):
     }
     # Write recomputed totals onto the entry so DB fields, breakdown and
     # the diary always agree with the ingredient table the user edited.
-    # calories/protein/carbs/fat/fiber are NOT NULL columns: when the
-    # recompute yields None (a custom ingredient with no values), fall
-    # back to 0 instead of crashing the save; sugar/sodium stay nullable.
-    not_null = {"calories", "protein", "carbs", "fat", "fiber"}
+    # A nutrient the recompute could not resolve stays as-is (form value /
+    # previous save): zeroing it here destroyed good data whenever one
+    # blank custom row voided a total.
     for src, dst in [("kcal", "calories"), ("protein", "protein"), ("carbs", "carbs"),
                      ("fat", "fat"), ("fiber", "fiber"), ("sugar", "sugar"), ("sodium", "sodium")]:
         value = computed["totals"].get(src)
-        if value is None and dst in not_null:
-            value = 0
-        setattr(entry, dst, None if value is None else round(value, 2))
+        if value is None:
+            continue
+        setattr(entry, dst, round(value, 2))
     # A custom-only range collapses to a single point (min==max==weight);
     # fall back to a ±15% band around the recomputed kcal so the UI range
     # stays informative instead of reading "571-571 kcal".
@@ -427,7 +454,11 @@ def _recompute_breakdown(request, entry):
         )
     else:
         majors = ", ".join(u["name_th"] for u in unmatched if u["estimated_share"] == "major")
-        entry.uncertainty = f"INCOMPLETE — majors still missing: {majors}. " + entry.uncertainty[:140]
+        prev = entry.uncertainty or ""
+        if prev.startswith("INCOMPLETE"):
+            # Strip a previous save's prefix so repeated saves never stack.
+            prev = prev.split(". ", 1)[1] if ". " in prev else ""
+        entry.uncertainty = f"INCOMPLETE — majors still missing: {majors}. " + prev[:140]
     return True
 
 

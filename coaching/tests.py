@@ -418,9 +418,16 @@ class CoachingTests(TestCase):
 
     def test_historical_analysis_preserved(self):
         from PIL import Image
+        from core.models import Profile as _Profile
+        from .context import local_now
         entry = FoodEntry.objects.create(user=self.user, name='Photo', note='ข้าว')
         old_job = Job.objects.create(user=self.user, task='food', status='done', payload={'entry': str(entry.pk)})
-        Analysis.objects.create(user=self.user, job=old_job, task='food', local_date=timezone.now().date(), version=1, content={'old': True})
+        # Seed on the user's LOCAL date — run_job allocates Analysis
+        # versions per local_date, so a UTC date diverges between
+        # 00:00–07:00 Asia/Bangkok and the versions restart at 1.
+        _Profile.objects.get_or_create(user=self.user)
+        seed_date = local_now(self.user).date()
+        Analysis.objects.create(user=self.user, job=old_job, task='food', local_date=seed_date, version=1, content={'old': True})
         result = self._food_v3([
             {'ref_key': 'cooked_white_rice', 'name_th': 'ข้าวสวย', 'weight_g': 150, 'min_g': 150, 'max_g': 150, 'user_confirmed': True},
         ])

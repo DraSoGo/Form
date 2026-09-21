@@ -105,27 +105,4 @@
   <a class="subtle-link" href="/workouts/">Back to training</a>
 </div>
 
-<script>
-(function(){
-  const form = document.getElementById('day-add-form');
-  if (!form) return;
-  const select = document.getElementById('day-exercise-select');
-  const strength = form.querySelector('.strength-fields');
-  const cardio = form.querySelector('.cardio-fields');
-  const minutes = form.querySelector('input[name="minutes"]');
-  const update = () => {
-    const isCardio = select.selectedOptions[0]?.dataset.activity === 'cardio';
-    strength.hidden = isCardio;
-    cardio.hidden = !isCardio;
-    strength.querySelectorAll('input').forEach(i => { i.disabled = isCardio; });
-    cardio.querySelectorAll('input').forEach(i => { i.disabled = !isCardio; });
-    if (isCardio && !minutes.value) {
-      minutes.value = select.selectedOptions[0]?.dataset.defaultMinutes || '20';
-    }
-  };
-  select.addEventListener('change', update);
-  update();
-})();
-</script>
-
 {% endblock %}

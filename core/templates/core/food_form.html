@@ -69,19 +69,15 @@
   <div class="actions">
     <button>Save food</button>
     <a href="/nutrition/">Back to diary</a>
-    {% if entry %}<a class="secondary button" href="/nutrition/"
-      onclick="return confirm('Delete this food entry? This cannot be undone.') && deleteFood()">Delete entry</a>{% endif %}
+    {# Delete submits through the separate top-level form via the form= attribute — CSP blocks inline onclick/script. #}
+    {% if entry %}<button class="secondary" type="submit"
+      form="delete-food-{{ entry.pk }}"
+      data-confirm="Delete this food entry? This cannot be undone.">Delete entry</button>{% endif %}
   </div>
 </form>
 
 {% if entry %}
   {# Delete posts through this separate top-level form with its own CSRF token. #}
   <form id="delete-food-{{ entry.pk }}" method="post" action="/delete/food/{{ entry.pk }}/">{% csrf_token %}</form>
-  <script>
-  function deleteFood() {
-    document.getElementById('delete-food-{{ entry.pk }}').submit();
-    return false;
-  }
-  </script>
 {% endif %}
 {% endblock %}

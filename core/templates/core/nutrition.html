@@ -155,11 +155,14 @@
               </span>
 
               <span class="food-chip">
-                {% if f.state == "manual" %}<span class="chip planned">Manual</span>
-                {% elif f.state == "ai_estimated" %}<span class="chip awaiting">AI estimated</span>
-                {% elif f.state == "user_corrected" %}<span class="chip in-progress">User corrected</span>
-                {% elif f.state == "confirmed" %}<span class="chip completed">Confirmed</span>
-                {% else %}<span class="chip planned">{{ f.get_state_display }}</span>{% endif %}
+                {# A confirmed entry with an incomplete breakdown shows only the Incomplete chip — "Confirmed Incomplete" read as a contradiction. #}
+                {% if f.state != "confirmed" or not f.ai_breakdown or f.ai_breakdown.completeness != 'incomplete' %}
+                  {% if f.state == "manual" %}<span class="chip planned">Manual</span>
+                  {% elif f.state == "ai_estimated" %}<span class="chip awaiting">AI estimated</span>
+                  {% elif f.state == "user_corrected" %}<span class="chip in-progress">User corrected</span>
+                  {% elif f.state == "confirmed" %}<span class="chip completed">Confirmed</span>
+                  {% else %}<span class="chip planned">{{ f.get_state_display }}</span>{% endif %}
+                {% endif %}
                 {% if f.ai_breakdown and f.ai_breakdown.completeness == 'incomplete' %}
                   <span class="chip failed">Incomplete</span>
                 {% endif %}
@@ -211,7 +214,7 @@
                   <form method="post" action="/delete/food/{{ f.pk }}/" style="margin:0">
                     {% csrf_token %}
                     <button class="secondary" type="submit"
-                            onclick="return confirm('Delete this entry?')">Delete</button>
+                            data-confirm="Delete this entry?">Delete</button>
                   </form>
                 </div>
               </div>
