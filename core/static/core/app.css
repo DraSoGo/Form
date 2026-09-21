@@ -2191,14 +2191,68 @@ main { min-width: 0; }
   .timer { position: static; }
   .form-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   nav a { font-size: 11px; }
-  .food-row .food-summary {
-    grid-template-columns: 1fr auto auto auto;
-    padding: 12px 12px 12px 4px;
-    gap: 8px;
+
+  /* ── Food diary entries as stacked cards on mobile ──
+     Desktop keeps the single-row grid (1fr auto auto auto auto).
+     Mobile: row 1 = name+date, row 2 = kcal + chips, nothing overlaps.
+     The hidden .food-macros is display:none so it consumes no cell. */
+  .food-row {
+    display: block;
+    position: relative;  /* anchor for the absolutely-positioned overlays */
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    margin: 0 0 10px;
+    background: var(--surface);
+    overflow: hidden;
   }
+  .food-row .food-select {
+    position: absolute;  /* overlay top-left of the card, still 44px tappable */
+    top: 0; left: 0; z-index: 2;
+    width: 48px; height: 48px;
+    min-width: 48px;
+    background: transparent;
+  }
+  .food-row .food-details { min-width: 0; }
+  .food-row .food-summary {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    grid-template-areas:
+      "name   kcal"
+      "chips  chips";
+    align-items: center;
+    gap: 4px 10px;
+    padding: 14px 12px 12px 52px;  /* left space for the checkbox */
+    min-height: 64px;
+  }
+  .food-row .food-name { grid-area: name; min-width: 0; }
+  .food-row .food-name strong {
+    white-space: normal;          /* long Thai names wrap instead of overflow */
+    overflow-wrap: anywhere;
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+  .food-row .food-kcal {
+    grid-area: kcal;
+    text-align: right;
+    /* Text ends ~30px before the card edge; the chevron occupies that
+       reserved strip, so no pixel of kcal text sits under the chevron. */
+    padding-right: 38px;
+    justify-self: stretch;
+  }
+  .food-row .food-chip {
+    grid-area: chips;
+    display: flex; flex-wrap: wrap; gap: 6px;
+    justify-content: flex-start;
+  }
+  .food-row .food-chevron { position: absolute; right: 10px; top: 18px; }
   .food-row .food-macros { display: none; }
-  .food-row .food-chip { font-size: 10px; }
-  .food-row .food-chip .chip { padding: 2px 8px; font-size: 10px; }
+  .food-row details[open] .food-chevron {
+    top: 18px; right: 10px; transform: rotate(90deg);
+  }
+  .food-row .food-detail { padding: 0 12px 12px; }
 }
 
 @media (max-width: 380px) {
