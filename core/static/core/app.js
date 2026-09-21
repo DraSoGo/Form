@@ -376,6 +376,36 @@ const chartData=document.querySelector('#chart-data');if(chartData){const charts
   // Global portion fraction — user-controlled (default 1.0 = ate it all).
   let portionFraction = 1.0;
 
+  // ── Hidden-field serialization ─────────────────────────────────────
+  // Every edit (add/remove/weight/nutrient) syncs the working items into
+  // #breakdown-json so the server recomputes totals + completeness on
+  // Save. The serialized shape matches what the backend expects:
+  // per-item ref_key/weight/min/max/user_confirmed/fraction_consumed,
+  // custom_values for hand-entered nutrients, and unmatched unchanged.
+  const breakdownJsonEl = document.getElementById('breakdown-json');
+  function syncBreakdownJson() {
+    if (!breakdownJsonEl) return;
+    const payload = {
+      dish_name: bd.dish_name || '',
+      cuisine: bd.cuisine || '',
+      strategy: bd.strategy || 'components',
+      items: items.map((ing) => ({
+        ref_key: ing.ref_key || 'custom',
+        name_th: ing.name_th || '',
+        weight_g: Number(ing.weight_g) || 0,
+        min_g: Number(ing.min_g) || 0,
+        max_g: Number(ing.max_g) || 0,
+        user_confirmed: !!ing.user_confirmed,
+        fraction_consumed: Number(ing.fraction_consumed) || 1.0,
+        custom: ing.custom === true,
+        custom_values: ing.custom_values || null,
+      })),
+      unmatched: Array.isArray(bd.unmatched) ? bd.unmatched : [],
+      confidence: bd.confidence || 'medium',
+    };
+    breakdownJsonEl.value = JSON.stringify(payload);
+  }
+
   // Totals = Σ per-item computed × fraction_consumed × portionFraction.
   function computeTotals() {
     const totals = {};
@@ -880,6 +910,9 @@ const chartData=document.querySelector('#chart-data');if(chartData){const charts
       // Table range shows the "on the plate" range (no portionFraction).
       rangeCell.textContent = `≈ ${bd.range_kcal[0]}–${bd.range_kcal[1]} kcal`;
     }
+    // Every table refresh means the items changed — keep the hidden
+    // field in sync so Save persists the edited breakdown.
+    syncBreakdownJson();
   }
 
   // ── Build the page ──
@@ -893,6 +926,15 @@ const chartData=document.querySelector('#chart-data');if(chartData){const charts
     renderBody();
     renderFoot();
     refreshTableTotals();
+  } else {
+    syncBreakdownJson();  // even the initial state must be serializable
+  }
+
+  // Also serialize right before the form submits (covers portion-button
+  // changes that don't run refreshTableTotals).
+  const editForm = document.querySelector('form.card[method="post"]');
+  if (editForm && breakdownJsonEl) {
+    editForm.addEventListener('submit', syncBreakdownJson, true);  // capture phase
   }
 
   if (recalcBtn) {

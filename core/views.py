@@ -314,6 +314,117 @@ def nutrition(request):
     )
 
 
+def _recompute_breakdown(request, entry):
+    """Rebuild ai_breakdown from the user-edited breakdown_json payload.
+
+    Returns True when the payload was valid and applied. The recomputed
+    totals are written to BOTH the entry fields and ai_breakdown so the
+    two can never disagree; completeness is re-derived from the remaining
+    unmatched majors (a user who adds the missing ingredient makes the
+    meal complete; confirming alone does not).
+    """
+    import json as _json
+    from .nutrition_ref import REFERENCE
+    from . import nutrition_calc
+
+    raw = request.POST.get("breakdown_json", "").strip()
+    if not raw:
+        return False
+    try:
+        payload = _json.loads(raw)
+    except (ValueError, TypeError):
+        return False
+    if not isinstance(payload, dict) or not isinstance(payload.get("items"), list):
+        return False
+
+    items = []
+    for item in payload["items"][:15]:
+        if not isinstance(item, dict):
+            continue
+        ref_key = str(item.get("ref_key") or "custom")
+        weight = float(item.get("weight_g") or 0)
+        ing = {
+            "ref_key": ref_key if ref_key in REFERENCE else "custom",
+            "name_th": str(item.get("name_th") or "")[:80],
+            "weight_g": min(weight, 2000),
+            "min_g": min(float(item.get("min_g") or 0), 2000),
+            "max_g": min(float(item.get("max_g") or weight), 2000),
+            "user_confirmed": bool(item.get("user_confirmed")),
+            "fraction_consumed": min(max(float(item.get("fraction_consumed") or 1.0), 0), 1),
+        }
+        cv = item.get("custom_values")
+        if isinstance(cv, dict) and any(v is not None for v in cv.values()):
+            ing["custom_values"] = {
+                k: (None if cv.get(k) in (None, "") else float(cv[k]))
+                for k in ("kcal", "protein", "carbs", "fat", "fiber", "sodium", "sugar")
+                if k in cv
+            }
+        if ing["weight_g"] > 0 or ing.get("custom_values"):
+            items.append(ing)
+    if not items:
+        return False
+
+    unmatched = [
+        {"name_th": str(u.get("name_th") or "")[:80],
+         "estimated_share": "major" if u.get("estimated_share") == "major" else "minor",
+         "note": str(u.get("note") or "")[:200]}
+        for u in (payload.get("unmatched") or [])[:6]
+        if isinstance(u, dict)
+    ]
+
+    computed = nutrition_calc.compute_meal(
+        items,
+        dish_name=str(payload.get("dish_name") or entry.name)[:160],
+        strategy=payload.get("strategy") if payload.get("strategy") in ("whole_dish", "components", "hybrid") else "components",
+        unmatched=unmatched,
+        completeness="complete",  # re-derived below from unmatched majors
+    )
+    # A custom-ingredient meal the user built themselves is complete unless
+    # majors remain unmatched AND those majors are still unrepresented.
+    complete = not any(u["estimated_share"] == "major" for u in unmatched)
+
+    entry.ai_breakdown = {
+        "schema": 2,
+        "dish_name": computed["dish_name"],
+        "cuisine": str(payload.get("cuisine") or "")[:40],
+        "strategy": computed["strategy"],
+        "items": computed["ingredients"],
+        "unmatched": unmatched,
+        "totals": computed["totals"],
+        "range_kcal": computed["range_kcal"],
+        "unknown_fields": computed["unknown_fields"],
+        "confidence": payload.get("confidence") if payload.get("confidence") in ("low", "medium", "high") else "medium",
+        "completeness": "complete" if complete else "incomplete",
+        "uncertainty_factors_thai": entry.ai_breakdown.get("uncertainty_factors_thai", [])
+        if isinstance(entry.ai_breakdown, dict) else [],
+        "validation_flags": nutrition_calc.validate_meal(computed),
+        "user_edited": True,
+    }
+    # Write recomputed totals onto the entry so DB fields, breakdown and
+    # the diary always agree with the ingredient table the user edited.
+    for src, dst in [("kcal", "calories"), ("protein", "protein"), ("carbs", "carbs"),
+                     ("fat", "fat"), ("fiber", "fiber"), ("sugar", "sugar"), ("sodium", "sodium")]:
+        value = computed["totals"].get(src)
+        setattr(entry, dst, None if value is None else round(value, 2))
+    # A custom-only range collapses to a single point (min==max==weight);
+    # fall back to a ±15% band around the recomputed kcal so the UI range
+    # stays informative instead of reading "571-571 kcal".
+    kcal_lo, kcal_hi = computed["range_kcal"]
+    if kcal_lo == kcal_hi and computed["totals"].get("kcal"):
+        base = float(computed["totals"]["kcal"])
+        entry.ai_breakdown["range_kcal"] = [round(base * 0.85), round(base * 1.15)]
+        kcal_lo, kcal_hi = entry.ai_breakdown["range_kcal"]
+    if complete:
+        entry.uncertainty = (
+            f"{entry.ai_breakdown['confidence']} confidence; "
+            f"{kcal_lo:.0f}-{kcal_hi:.0f} kcal (user-edited breakdown)."
+        )
+    else:
+        majors = ", ".join(u["name_th"] for u in unmatched if u["estimated_share"] == "major")
+        entry.uncertainty = f"INCOMPLETE — majors still missing: {majors}. " + entry.uncertainty[:140]
+    return True
+
+
 def food_edit(request, pk=None):
     obj = get_object_or_404(FoodEntry, pk=pk, user=request.user) if pk else None
     form = FoodForm(
@@ -336,6 +447,12 @@ def food_edit(request, pk=None):
                 # user-chosen state (confirmed/ai_estimated/user_corrected)
                 # is always preserved as submitted.
                 entry.state = "user_corrected"
+            # Ingredient-based edit: the serialized breakdown (if present)
+            # becomes the source of truth and overwrites the nutrient
+            # fields with recomputed values. Without it, direct field
+            # edits are a manual override and the breakdown stays as-is.
+            if pk:
+                _recompute_breakdown(request, entry)
             entry.save()
             if request.POST.get("save_library"):
                 values = {x: getattr(entry, x) for x in ["quantity", *NUTRIENTS]}
