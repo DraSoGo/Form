@@ -402,9 +402,15 @@ def _recompute_breakdown(request, entry):
     }
     # Write recomputed totals onto the entry so DB fields, breakdown and
     # the diary always agree with the ingredient table the user edited.
+    # calories/protein/carbs/fat/fiber are NOT NULL columns: when the
+    # recompute yields None (a custom ingredient with no values), fall
+    # back to 0 instead of crashing the save; sugar/sodium stay nullable.
+    not_null = {"calories", "protein", "carbs", "fat", "fiber"}
     for src, dst in [("kcal", "calories"), ("protein", "protein"), ("carbs", "carbs"),
                      ("fat", "fat"), ("fiber", "fiber"), ("sugar", "sugar"), ("sodium", "sodium")]:
         value = computed["totals"].get(src)
+        if value is None and dst in not_null:
+            value = 0
         setattr(entry, dst, None if value is None else round(value, 2))
     # A custom-only range collapses to a single point (min==max==weight);
     # fall back to a ±15% band around the recomputed kcal so the UI range

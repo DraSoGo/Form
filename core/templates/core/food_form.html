@@ -61,8 +61,6 @@
         <button type="button" id="breakdown-recalc" class="secondary">Recalculate</button>
         <button type="button" id="breakdown-apply" class="secondary">Apply to nutrition fields</button>
       </div>
-      {# Serialized breakdown rides along on Save so the server recomputes
-         totals + completeness from the edited items (single source of truth). #}
       <input type="hidden" name="breakdown_json" id="breakdown-json">
       <p class="breakdown-sources muted">Sources: USDA FDC / Thai typical values (curated)</p>
     </details>
@@ -71,13 +69,19 @@
   <div class="actions">
     <button>Save food</button>
     <a href="/nutrition/">Back to diary</a>
-    {% if entry %}<button type="submit" formaction="/delete/food/{{ entry.pk }}/" form="delete-food-{{ entry.pk }}" class="secondary" formnovalidate
-      onclick="return confirm('Delete this food entry? This cannot be undone.')">Delete entry</button>{% endif %}
+    {% if entry %}<a class="secondary button" href="/nutrition/"
+      onclick="return confirm('Delete this food entry? This cannot be undone.') && deleteFood()">Delete entry</a>{% endif %}
   </div>
 </form>
 
 {% if entry %}
-  {# Separate top-level delete form (never nested inside the edit form) #}
-  <form id="delete-food-{{ entry.pk }}" method="post" action="/delete/food/{{ entry.pk }}/"></form>
+  {# Delete posts through this separate top-level form with its own CSRF token. #}
+  <form id="delete-food-{{ entry.pk }}" method="post" action="/delete/food/{{ entry.pk }}/">{% csrf_token %}</form>
+  <script>
+  function deleteFood() {
+    document.getElementById('delete-food-{{ entry.pk }}').submit();
+    return false;
+  }
+  </script>
 {% endif %}
 {% endblock %}
