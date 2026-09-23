@@ -1092,12 +1092,14 @@ def trends(request):
         days = 30
     if days not in [7, 14, 30, 0]:
         days = 30
-    # days=0 means "all history": no lower bound on the window.
-    start = None if days == 0 else timezone.now() - timedelta(days=days)
+    # days=0 ("All") is bounded to a 365-day window on EVERY query: the
+    # charts already capped nutrition/performance at 365 points, and the
+    # remaining body/sleep/workout reads used to scan unbounded history.
+    window = 365 if days == 0 else days
+    start = timezone.now() - timedelta(days=window)
     groups = {}
     body_qs = BodyMeasurement.objects.filter(user=request.user)
-    if start is not None:
-        body_qs = body_qs.filter(recorded_at__gte=start)
+    body_qs = body_qs.filter(recorded_at__gte=start)
     for entry in body_qs.order_by("recorded_at"):
         for metric in ["weight", "body_fat", "muscle", "waist", "arm", "thigh"]:
             value = getattr(entry, metric)
@@ -1115,9 +1117,9 @@ def trends(request):
     if days == 0:
         # All history: one aggregate query grouped by local day (the old
         # per-day loop fired one nutrition_totals query per historical day),
-        # capped to the most recent 365 logged days for chart sanity.
+        # bounded to the 365-day window used by every other All-view query.
         rows = (
-            FoodEntry.objects.filter(user=request.user)
+            FoodEntry.objects.filter(user=request.user, recorded_at__gte=start)
             .annotate(day=db_functions.TruncDate("recorded_at", tz=timezone.get_current_timezone()))
             .values("day")
             .annotate(**{x: Sum(x) for x in NUTRIENTS})
@@ -1129,7 +1131,7 @@ def trends(request):
                 **{x: float(row[x] or 0) for x in NUTRIENTS},
             }
             for row in rows
-        ][-365:]
+        ]
     else:
         for offset in reversed(range(days)):
             date = today - timedelta(days=offset)
@@ -1144,8 +1146,7 @@ def trends(request):
     groups["Calories"] = [{"date": d["date"], "value": d["calories"]} for d in logged]
     groups["Protein"] = [{"date": d["date"], "value": d["protein"]} for d in logged]
     sleep_qs = SleepEntry.objects.filter(user=request.user).order_by("date")
-    if start is not None:
-        sleep_qs = sleep_qs.filter(date__gte=start.date())
+    sleep_qs = sleep_qs.filter(date__gte=start.date())
     groups["Sleep"] = [
         {"date": s.date.strftime("%d %b"), "value": float(s.hours)}
         for s in sleep_qs
@@ -1153,15 +1154,13 @@ def trends(request):
     performance = []
     # One query for every exercise's completed sets (the old loop fired a
     # set query per exercise), local-timezone dates (UTC formatting used
-    # to shift post-midnight sessions to the previous day) and a bounded
-    # window for the All view (days=0 previously loaded full history).
-    perf_start = start
-    if perf_start is None:
-        perf_start = timezone.now() - timedelta(days=365)
+    # to shift post-midnight sessions to the previous day). `start` is
+    # always set — the All view uses the same 365-day window as everything
+    # else in this view.
     perf_rows = (
         WorkoutSet.objects.filter(
             session__user=request.user,
-            session__started_at__gte=perf_start,
+            session__started_at__gte=start,
             completed=True,
         )
         .exclude(set_type="warmup")
@@ -1190,16 +1189,12 @@ def trends(request):
             }
         )
     # Summary cards
-    workout_qs = WorkoutSession.objects.filter(user=request.user)
-    if start is not None:
-        workout_qs = workout_qs.filter(started_at__gte=start)
-    workout_count = workout_qs.count()
-    span_for_avg = days if days > 0 else max(
-        1, (today - timezone.localtime(
-            workout_qs.order_by("started_at").values_list("started_at", flat=True).first()
-            or timezone.now()
-        ).date()).days + 1
+    workout_qs = WorkoutSession.objects.filter(
+        user=request.user, started_at__gte=start
     )
+    workout_count = workout_qs.count()
+    # All view averages over the same 365-day window as the queries above.
+    span_for_avg = window
     workout_sub = (
         f"{round(workout_count / span_for_avg * 7, 1)} per week"
         if workout_count else "No sessions in this period"
