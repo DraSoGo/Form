@@ -1,0 +1,11 @@
+[Unit]
+Description=Marker unit: a fitness backup/restore-test run failed
+# Written as a visible, easy-to-check artifact next to the app so a silent
+# nightly failure is discoverable without digging through the journal.
+# Uptime Kuma push (via KUMA_PUSH_URL in runtime.env, handled inside
+# backup.py) covers active alerting.
+
+[Service]
+Type=oneshot
+User=root
+ExecStart=/bin/sh -c 'printf "failed at %s (unit %%n)\n" "$$(date -Is)" > /srv/docker/apps/fitness/data/backup-failed && chmod 600 /srv/docker/apps/fitness/data/backup-failed'

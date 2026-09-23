@@ -2,6 +2,7 @@
 Description=Fitness consistent database and incremental media NAS backup
 After=docker.service network-online.target
 Wants=network-online.target
+OnFailure=fitness-backup-failed.service
 
 [Service]
 Type=oneshot
