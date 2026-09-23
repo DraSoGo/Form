@@ -208,13 +208,13 @@ def run_job(job):
                 confirmed=reestimate.get('confirmed') or []
                 lines=[f"- {c['name_th'] or c.get('ref_key')}: {c.get('weight_g')}g" for c in confirmed if c.get('weight_g')]
                 prompt=(
-                    _food_prompt(entry.note[:2000])
+                    _food_prompt((entry.name + ' ' + entry.note)[:2000])
                     + "\n\nThe user has CONFIRMED these components at these exact weights — keep each one with user_confirmed=true and its exact weight:\n"
                     + ("\n".join(lines) or "(none yet)")
                     + "\nEstimate ONLY the remaining components. Never change confirmed weights. If a confirmed component has no reference key, keep it in items with ref_key 'custom' and leave nutrient values unset."
                 )
             else:
-                prompt=_food_prompt(entry.note[:2000])
+                prompt=_food_prompt((entry.name + ' ' + entry.note)[:2000])
             context=build_context(job.user,'food',day,query=entry.name+' '+entry.note)
         if job.task=='exercise':
             exercise=m.Exercise.objects.get(pk=job.payload['exercise'],user=job.user)
@@ -233,7 +233,7 @@ def run_job(job):
         if job.task == 'food':
             food_estimate, food_computed, validation_flags = _resolve_estimate(result)
             if validation_flags:
-                correction_prompt = _food_prompt(entry.note[:2000]) + "\n\nCorrection needed:\n" + "\n".join(validation_flags)
+                correction_prompt = _food_prompt((entry.name + ' ' + entry.note)[:2000]) + "\n\nCorrection needed:\n" + "\n".join(validation_flags)
                 result, provider, model = route('food', context, correction_prompt, image, job=job)
                 food_estimate, food_computed, validation_flags = _resolve_estimate(result)
                 if validation_flags:
