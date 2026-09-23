@@ -9,6 +9,7 @@ from django.contrib.auth.forms import PasswordChangeForm
 from django.core.exceptions import ValidationError
 from django.db import connection, transaction
 from django.db.models import Avg, Max, Sum
+from django.db.models import functions as db_functions
 from django.http import FileResponse, HttpResponse, JsonResponse, Http404
 from django.shortcuts import render, redirect, get_object_or_404
 from django.utils import timezone
@@ -734,12 +735,16 @@ def workouts(request):
             selected_day = parsed
     except ValueError:
         selected_day = None
+    # One query for every muscle group (per-day view included — the old
+    # per-muscle calls re-fetched the same sets ten times per load).
+    day_summaries = muscle_summaries(request.user, on_date=selected_day)
     muscle_groups = [
         {
             "key": muscle,
-            **muscle_summary(request.user, muscle, on_date=selected_day),
+            **day_summaries[muscle],
         }
         for muscle in ["chest", "back", "shoulders", "biceps", "triceps", "abs", "glutes", "quads", "hamstrings", "calves"]
+        if muscle in day_summaries
     ]
     return render(
         request,
@@ -1104,20 +1109,23 @@ def trends(request):
     today = timezone.localdate()
     daily = []
     if days == 0:
-        # All history: one point per day with logged food, earliest to latest.
-        first = FoodEntry.objects.filter(user=request.user).order_by("recorded_at").first()
-        if first:
-            first_day = timezone.localtime(first.recorded_at).date()
-            span = (today - first_day).days + 1
-        else:
-            span = 1
-        for offset in reversed(range(span)):
-            date = today - timedelta(days=offset)
-            day_start = timezone.make_aware(datetime.combine(date, time.min))
-            values = nutrition_totals(
-                request.user, day_start, day_start + timedelta(days=1)
-            )
-            daily.append({"date": date.strftime("%d %b"), **values})
+        # All history: one aggregate query grouped by local day (the old
+        # per-day loop fired one nutrition_totals query per historical day),
+        # capped to the most recent 365 logged days for chart sanity.
+        rows = (
+            FoodEntry.objects.filter(user=request.user)
+            .annotate(day=db_functions.TruncDate("recorded_at", tz=timezone.get_current_timezone()))
+            .values("day")
+            .annotate(**{x: Sum(x) for x in NUTRIENTS})
+            .order_by("day")
+        )
+        daily = [
+            {
+                "date": row["day"].strftime("%d %b"),
+                **{x: float(row[x] or 0) for x in NUTRIENTS},
+            }
+            for row in rows
+        ][-365:]
     else:
         for offset in reversed(range(days)):
             date = today - timedelta(days=offset)

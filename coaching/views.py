@@ -92,6 +92,11 @@ def subscribe(request):
         if data.get('revoke'):
             PushSubscription.objects.filter(user=request.user,endpoint=endpoint).delete()
         else:
+            # A globally-unique endpoint owned by ANOTHER user must not be
+            # silently taken over (restore/import edge case): reject it.
+            existing=PushSubscription.objects.filter(endpoint=endpoint).first()
+            if existing and existing.user_id!=request.user.id:
+                return JsonResponse({'error':'Endpoint belongs to another account'},status=400)
             PushSubscription.objects.update_or_create(endpoint=endpoint,defaults={'user':request.user,'keys':keys})
         return JsonResponse({'ok':True})
     except (ValidationError,ValueError,TypeError): return JsonResponse({'error':'Invalid push subscription'},status=400)

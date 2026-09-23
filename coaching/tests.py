@@ -8,7 +8,7 @@ from unittest.mock import patch
 import httpx
 from django.contrib.auth import get_user_model
 from django.core.exceptions import ValidationError
-from django.test import TestCase,SimpleTestCase,override_settings
+from django.test import TestCase,SimpleTestCase,Client,override_settings
 from django.utils import timezone
 from pydantic import ValidationError as SchemaError
 from core.models import Profile,FoodEntry,BodyMeasurement,SleepEntry,NutritionTarget,Exercise
@@ -705,3 +705,33 @@ class NoteOnlyAllUnknownRefsTests(TestCase):
         self.assertIn('ไข่ดาว',names)
         self.assertEqual(entry.ai_breakdown['items'],[])
         self.assertEqual(entry.ai_breakdown['completeness'],'incomplete')
+
+class PushOwnershipTests(TestCase):
+    """A globally-unique push endpoint owned by another user must not be
+    silently taken over by a subscribe call from a different account."""
+    def test_endpoint_takeover_rejected(self):
+        from coaching.models import PushSubscription
+        owner = get_user_model().objects.create_user('push-owner', password='x'*12)
+        other = get_user_model().objects.create_user('push-other', password='x'*12)
+        PushSubscription.objects.create(user=owner, endpoint='https://fcm.googleapis.com/fcm/send/abc', keys={'p256dh': 'a2tra2tra2tra2tra2tra2tra2tra2tra2tra2tra2tra2tra2tra2tra2tra2tra2tra2tra2tra2tra2tra2s', 'auth': 'YWFhYWFhYWFhYWFhYWFhYQ'})
+        c = Client()
+        c.force_login(other)
+        payload = {'endpoint': 'https://fcm.googleapis.com/fcm/send/abc',
+                   'keys': {'p256dh': 'bm5ubm5ubm5ubm5ubm5ubm5ubm5ubm5ubm5ubm5ubm5ubm5ubm5ubm5ubm5ubm5ubm5ubm5ubm5ubm5ubm5ubm4', 'auth': 'bm5ubm5ubm5ubm5ubm5ubg'}}
+        response = c.post('/coach/push/', data=json.dumps(payload), content_type='application/json')
+        self.assertEqual(response.status_code, 400)
+        sub = PushSubscription.objects.get(endpoint='https://fcm.googleapis.com/fcm/send/abc')
+        self.assertEqual(sub.user_id, owner.pk)          # ownership unchanged
+        self.assertEqual(sub.keys, {'p256dh': 'a2tra2tra2tra2tra2tra2tra2tra2tra2tra2tra2tra2tra2tra2tra2tra2tra2tra2tra2tra2tra2tra2s', 'auth': 'YWFhYWFhYWFhYWFhYWFhYQ'})  # keys unchanged
+    def test_own_endpoint_still_updates(self):
+        from coaching.models import PushSubscription
+        owner = get_user_model().objects.create_user('push-owner2', password='x'*12)
+        PushSubscription.objects.create(user=owner, endpoint='https://fcm.googleapis.com/fcm/send/xyz', keys={'p256dh': 'b29vb29vb29vb29vb29vb29vb29vb29vb29vb29vb29vb29vb29vb29vb29vb29vb29vb29vb29vb29vb29vb28', 'auth': 'b29vb29vb29vb29vb29vbw'})
+        c = Client()
+        c.force_login(owner)
+        payload = {'endpoint': 'https://fcm.googleapis.com/fcm/send/xyz',
+                   'keys': {'p256dh': 'bm5ubm5ubm5ubm5ubm5ubm5ubm5ubm5ubm5ubm5ubm5ubm5ubm5ubm5ubm5ubm5ubm5ubm5ubm5ubm5ubm5ubm4', 'auth': 'bm5ubm5ubm5ubm5ubm5ubg'}}
+        response = c.post('/coach/push/', data=json.dumps(payload), content_type='application/json')
+        self.assertEqual(response.status_code, 200)
+        sub = PushSubscription.objects.get(endpoint='https://fcm.googleapis.com/fcm/send/xyz')
+        self.assertEqual(sub.keys, {'p256dh': 'bm5ubm5ubm5ubm5ubm5ubm5ubm5ubm5ubm5ubm5ubm5ubm5ubm5ubm5ubm5ubm5ubm5ubm5ubm5ubm5ubm5ubm4', 'auth': 'bm5ubm5ubm5ubm5ubm5ubg'})
