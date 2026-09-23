@@ -2361,3 +2361,104 @@ main { min-width: 0; }
   .card-inner-details > summary,
   .card-inner-details > summary::after { transition: none; }
 }
+
+/* =========================================================================
+   Training activity heatmap (GitHub-style contributions)
+   ========================================================================= */
+.heatmap-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+.heatmap-head h2 { margin: 0; }
+.streak-badge {
+  margin: 0;
+  font-size: 13.5px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+.streak-badge strong {
+  color: var(--ink);
+  font-size: 16px;
+}
+.heatmap-wrap { overflow-x: auto; padding-bottom: 4px; }
+.heatmap-grid {
+  display: flex;
+  gap: 3px;
+  width: max-content;
+}
+.heatmap-col {
+  display: grid;
+  grid-template-rows: repeat(7, 11px);
+  gap: 3px;
+}
+.heat {
+  width: 11px;
+  height: 11px;
+  border-radius: 2.5px;
+  background: var(--surface-2);
+}
+/* Green scale tuned for the dark theme (AA against --surface). */
+.heat.lv1 { background: #2e4632; }
+.heat.lv2 { background: #4a7048; }
+.heat.lv3 { background: #6d8d54; }
+.heat.lv4 { background: #9cc178; }
+.heat:not(.lv0) { outline: 1px solid rgba(0,0,0,.15); outline-offset: -1px; }
+.heatmap-legend {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 8px;
+  justify-content: flex-end;
+}
+.heatmap-legend .heat { width: 10px; height: 10px; }
+@media (max-width: 640px) {
+  .heatmap-col { grid-template-rows: repeat(7, 10px); }
+  .heat { width: 10px; height: 10px; }
+}
+
+/* =========================================================================
+   Personal records list
+   ========================================================================= */
+.pr-list { display: grid; gap: 10px; }
+.pr-item {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+}
+.pr-item summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 14px;
+  min-height: 44px;
+  cursor: pointer;
+  list-style: none;
+}
+.pr-item summary::-webkit-details-marker { display: none; }
+.pr-item summary::after {
+  content: "+";
+  color: var(--muted);
+  font-size: 17px;
+  font-weight: 600;
+}
+.pr-item[open] summary::after { content: "−"; }
+.pr-name { font-weight: 650; }
+.pr-best { display: grid; text-align: right; }
+.pr-best strong { font-size: 15px; }
+.pr-best small { color: var(--muted); font-size: 12.5px; }
+.pr-item .table-wrap { margin: 0 14px 12px; }
+.pr-item table { width: 100%; font-size: 14px; }
+.pr-item th {
+  text-align: left;
+  color: var(--muted);
+  font-weight: 600;
+  font-size: 12.5px;
+  padding: 6px 8px 6px 0;
+  border-bottom: 1px solid var(--border);
+}
+.pr-item td { padding: 7px 8px 7px 0; border-bottom: 1px solid var(--border); }
+.pr-item tr:last-child td { border-bottom: 0; }

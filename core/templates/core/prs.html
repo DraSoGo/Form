@@ -1,0 +1,38 @@
+{% extends "core/base.html" %}
+{% block title %}Personal records · Form{% endblock %}
+{% block content %}
+<p class="eyebrow">Strength</p>
+<h1>Personal records</h1>
+<p class="muted">Best completed working set per exercise. Estimated 1RM uses the Epley formula.</p>
+
+{% if records %}
+<div class="pr-list">
+  {% for r in records %}
+  <details class="pr-item">
+    <summary>
+      <span class="pr-name">{{ r.exercise.name }}</span>
+      <span class="pr-best">
+        <strong>{{ r.weight|floatformat:"1g" }} kg × {{ r.reps }}</strong>
+        <small>est. 1RM {{ r.e1rm|floatformat:1 }} kg · {{ r.date|date:"j M Y" }}</small>
+      </span>
+    </summary>
+    <div class="table-wrap">
+      <table>
+        <tr><th>Weight</th><th>Reps</th><th>Est. 1RM</th><th>Date</th></tr>
+        {% for s in r.top_sets %}
+        <tr>
+          <td>{{ s.weight|floatformat:"1g" }} kg</td>
+          <td>{{ s.reps }}</td>
+          <td>{{ s.e1rm|floatformat:1 }} kg</td>
+          <td>{{ s.date|date:"j M Y" }}</td>
+        </tr>
+        {% endfor %}
+      </table>
+    </div>
+  </details>
+  {% endfor %}
+</div>
+{% else %}
+<p class="muted">Complete working sets to set your first records.</p>
+{% endif %}
+{% endblock %}

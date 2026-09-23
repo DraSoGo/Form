@@ -7,6 +7,8 @@
 <h1>Make today count.</h1>
 <p class="muted">A little consistency goes a long way.</p>
 
+{% include "core/heatmap.html" %}
+
 <div class="grid">
   <section class="card">
     <h2>Daily nourishment</h2>
@@ -42,6 +44,7 @@
         <input type="hidden" name="name" value="{{ scheduled|default:'Workout' }}">
         <button>Start session →</button>
       </form>
+      <a class="subtle-link" href="/workouts/prs/">Personal records</a>
       <a class="subtle-link" href="/workouts/">View training</a>
     </div>
   </section>

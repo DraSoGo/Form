@@ -7,7 +7,8 @@ from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.core.exceptions import ValidationError
 from django.db import transaction
-from django.db.models import Sum
+from django.db.models import Count, Sum
+from django.db.models import functions as db_functions
 from django.utils import timezone
 from .models import *
 
@@ -174,6 +175,159 @@ def weekly_volume(user):
             for muscle in getattr(item.exercise, field):
                 result.setdefault(muscle, {"direct": 0, "indirect": 0})[label] += 1
     return result
+
+
+def training_activity(user, days=371):
+    """Day-level training activity for the GitHub-style heatmap and streak.
+
+    Returns {'weeks': [[{iso, level, title} × 7] × N], 'streak': int}.
+    A day counts as trained when at least one non-warmup set was completed
+    (a session started but abandoned mid-way does not count).
+    """
+    since = timezone.now() - timedelta(days=days)
+    rows = (
+        WorkoutSet.objects.filter(
+            session__user=user,
+            session__started_at__gte=since,
+            completed=True,
+        )
+        .exclude(set_type="warmup")
+        .annotate(day=db_functions.TruncDate("session__started_at"))
+        .values("day")
+        .annotate(sets=Count("id"))
+    )
+    dates = {row["day"].isoformat(): row["sets"] for row in rows}
+
+    def level(sets):
+        if not sets:
+            return 0
+        if sets <= 3:
+            return 1
+        if sets <= 8:
+            return 2
+        if sets <= 15:
+            return 3
+        return 4
+
+    today = timezone.localdate()
+    # Grid starts 52 weeks back, on the week's Monday, so today ends the
+    # last column. Leading/trailing cells outside the window stay level 0.
+    start = today - timedelta(days=today.weekday() + 7 * 52)
+    weeks = []
+    cursor = start
+    while cursor <= today:
+        week = []
+        for _ in range(7):
+            iso = cursor.isoformat()
+            sets = dates.get(iso, 0)
+            week.append(
+                {
+                    "iso": iso,
+                    "level": level(sets),
+                    "title": f"{cursor.strftime('%d %b %Y')}: {sets} sets" if sets
+                    else cursor.strftime("%d %b %Y"),
+                }
+            )
+            cursor += timedelta(days=1)
+            if cursor > today and len(week) < 7:
+                # Pad the final column to keep rows aligned.
+                while len(week) < 7:
+                    week.append({"iso": "", "level": 0, "title": ""})
+                break
+        weeks.append(week)
+
+    streak = 0
+    day = today
+    if day.isoformat() not in dates:
+        day -= timedelta(days=1)
+    while day.isoformat() in dates:
+        streak += 1
+        day -= timedelta(days=1)
+    return {"weeks": weeks, "streak": streak}
+
+
+E1RM = "epley"  # est. 1RM formula used across the app
+
+
+def estimate_1rm(weight, reps):
+    """Epley: w × (1 + reps/30). Returns None for unusable input."""
+    if not weight or not reps:
+        return None
+    return round(float(weight) * (1 + reps / 30.0), 1)
+
+
+def personal_records(user):
+    """Best completed working set per strength exercise, newest first.
+
+    Returns a list of {exercise, weight, reps, e1rm, date, top_sets} where
+    top_sets lists the five heaviest completed working sets by e1RM.
+    """
+    sets = list(
+        WorkoutSet.objects.filter(
+            session__user=user,
+            session__user__isnull=False,
+            completed=True,
+            set_type="working",
+            exercise__activity_type="strength",
+            exercise__archived=False,
+        )
+        .exclude(weight__isnull=True)
+        .select_related("exercise", "session")
+        .order_by("session__started_at")
+    )
+    by_exercise = {}
+    for s in sets:
+        e1rm = estimate_1rm(s.weight, s.reps)
+        if e1rm is None:
+            continue
+        by_exercise.setdefault(s.exercise.pk, []).append(
+            {"set": s, "e1rm": e1rm}
+        )
+    records = []
+    for entries in by_exercise.values():
+        best = max(entries, key=lambda e: (e["e1rm"], e["set"].weight))
+        s = best["set"]
+        top = sorted(entries, key=lambda e: (-e["e1rm"], -e["set"].weight))[:5]
+        records.append(
+            {
+                "exercise": s.exercise,
+                "weight": float(s.weight),
+                "reps": s.reps,
+                "e1rm": best["e1rm"],
+                "date": timezone.localdate(s.session.started_at),
+                "top_sets": [
+                    {
+                        "weight": float(e["set"].weight),
+                        "reps": e["set"].reps,
+                        "e1rm": e["e1rm"],
+                        "date": timezone.localdate(e["set"].session.started_at),
+                    }
+                    for e in top
+                ],
+            }
+        )
+    records.sort(key=lambda r: r["date"], reverse=True)
+    return records
+
+
+def is_personal_record(user, exercise_id, weight, reps):
+    """True when (weight, reps, e1RM) beats every earlier completed working
+    set of this exercise. Used to celebrate new PRs on set completion."""
+    e1rm = estimate_1rm(weight, reps)
+    if e1rm is None:
+        return False
+    earlier = WorkoutSet.objects.filter(
+        session__user=user,
+        exercise_id=exercise_id,
+        completed=True,
+        set_type="working",
+    ).exclude(weight__isnull=True)
+    best = 0.0
+    for s in earlier:
+        candidate = estimate_1rm(s.weight, s.reps)
+        if candidate and candidate > best:
+            best = candidate
+    return e1rm > best
 
 
 @transaction.atomic

@@ -102,11 +102,20 @@ def dashboard(request):
             "today_exercises": today_exercises,
             "muscle_regions": region_states(request.user, 7),
             "muscle_groups": muscle_groups,
+            "activity": training_activity(request.user),
             "foods": FoodEntry.objects.filter(
                 user=request.user, recorded_at__gte=start
             )[:5],
             "sessions": WorkoutSession.objects.filter(user=request.user)[:3],
         },
+    )
+
+
+def personal_records_view(request):
+    return render(
+        request,
+        "core/prs.html",
+        {"records": personal_records(request.user)},
     )
 
 
@@ -1014,6 +1023,13 @@ def cardio_edit(request, pk):
 def set_complete(request, pk):
     item = get_object_or_404(WorkoutSet, pk=pk, session__user=request.user)
     item.completed = not item.completed
+    if item.completed and item.set_type == "working" and item.weight:
+        # Celebrate only on the way up (un-completing must stay silent).
+        if is_personal_record(request.user, item.exercise_id, item.weight, item.reps):
+            messages.success(
+                request,
+                f"New PR · {item.exercise.name}: {item.weight:g} kg × {item.reps}",
+            )
     item.save(update_fields=["completed"])
     return redirect(
         "/workouts/session/" + str(item.session_id) + "/?rest=" + str(item.rest_seconds)

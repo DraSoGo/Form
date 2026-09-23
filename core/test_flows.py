@@ -8,6 +8,7 @@ from pathlib import Path
 from PIL import Image
 from django.conf import settings
 from django.contrib.auth import get_user_model
+from django.contrib.messages import get_messages
 from django.core.exceptions import ValidationError
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import Client, TestCase, override_settings
@@ -736,3 +737,83 @@ class CoreFlowTests(TestCase):
         self.assertEqual(WorkoutPlan.objects.count(), 2)
         latest = WorkoutPlan.objects.first()
         self.assertEqual(latest.exercises, plan.exercises)
+
+    # ── Training activity heatmap + streak ──────────────────────────────
+
+    def test_training_activity_levels_and_streak(self):
+        from core.services import training_activity
+        plan = create_plan(self.user, self.plan_data())
+        session = start_session(self.user, plan, 'Push')
+        for s in session.sets.all():
+            s.completed = True
+            s.save(update_fields=['completed'])
+        activity = training_activity(self.user)
+        flat = [d for week in activity['weeks'] for d in week]
+        today_cell = [d for d in flat if d['iso'] == timezone.localdate().isoformat()]
+        self.assertEqual(len(today_cell), 1)
+        self.assertGreaterEqual(today_cell[0]['level'], 1)
+        self.assertEqual(activity['streak'], 1)
+
+    def test_training_activity_streak_counts_consecutive_days(self):
+        from core.services import training_activity
+        from datetime import timedelta as _td
+        for offset in (0, 1, 2):
+            day = timezone.now() - _td(days=offset)
+            session = WorkoutSession.objects.create(user=self.user, name='S', started_at=day)
+            WorkoutSet.objects.create(
+                session=session, exercise=self.exercise, weight=60, reps=8,
+                set_type='working', completed=True,
+            )
+        activity = training_activity(self.user)
+        self.assertEqual(activity['streak'], 3)
+
+    def test_training_activity_ignores_incomplete_and_warmup(self):
+        from core.services import training_activity
+        session = WorkoutSession.objects.create(user=self.user, name='S')
+        WorkoutSet.objects.create(session=session, exercise=self.exercise, weight=60, reps=8, completed=False)
+        WorkoutSet.objects.create(session=session, exercise=self.exercise, weight=40, reps=8, set_type='warmup', completed=True)
+        activity = training_activity(self.user)
+        self.assertEqual(activity['streak'], 0)
+        today = timezone.localdate().isoformat()
+        self.assertFalse(any(d['level'] for w in activity['weeks'] for d in w if d['iso'] == today))
+
+    # ── Personal records ────────────────────────────────────────────────
+
+    def test_personal_records_epley_best_and_top_sets(self):
+        from core.services import personal_records
+        session = WorkoutSession.objects.create(user=self.user, name='S')
+        WorkoutSet.objects.create(session=session, exercise=self.exercise, weight=100, reps=5, set_type='working', completed=True)
+        WorkoutSet.objects.create(session=session, exercise=self.exercise, weight=90, reps=8, set_type='working', completed=True)
+        WorkoutSet.objects.create(session=session, exercise=self.exercise, weight=140, reps=2, set_type='drop', completed=True)
+        WorkoutSet.objects.create(session=session, exercise=self.exercise, weight=40, reps=10, set_type='warmup', completed=True)
+        WorkoutSet.objects.create(session=session, exercise=self.exercise, weight=80, reps=3, set_type='working', completed=False)
+        records = personal_records(self.user)
+        self.assertEqual(len(records), 1)
+        r = records[0]
+        # 90×8 e1rm=114 > 100×5 e1rm=116.7? No: 100×5 = 116.7 wins.
+        self.assertEqual((r['weight'], r['reps']), (100, 5))
+        self.assertAlmostEqual(r['e1rm'], round(100 * (1 + 5 / 30), 1))
+        # Only completed working sets appear in the top list.
+        self.assertEqual(len(r['top_sets']), 2)
+
+    def test_is_personal_record_and_flash_on_complete(self):
+        from core.services import is_personal_record
+        session = WorkoutSession.objects.create(user=self.user, name='S')
+        WorkoutSet.objects.create(session=session, exercise=self.exercise, weight=80, reps=5, set_type='working', completed=True)
+        # New set completing above the old best is a PR.
+        new_set = WorkoutSet.objects.create(session=session, exercise=self.exercise, weight=100, reps=5, set_type='working')
+        self.assertTrue(is_personal_record(self.user, self.exercise.pk, 100, 5))
+        self.assertFalse(is_personal_record(self.user, self.exercise.pk, 80, 5))
+        response = self.client.post(f'/workouts/set/{new_set.pk}/complete/')
+        self.assertEqual(response.status_code, 302)
+        messages_list = list(get_messages(response.wsgi_request))
+        self.assertTrue(any('New PR' in str(m) for m in messages_list))
+
+    def test_prs_page_renders(self):
+        from core.services import personal_records
+        session = WorkoutSession.objects.create(user=self.user, name='S')
+        WorkoutSet.objects.create(session=session, exercise=self.exercise, weight=100, reps=5, set_type='working', completed=True)
+        response = self.client.get('/workouts/prs/')
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'Personal records')
+        self.assertContains(response, self.exercise.name)

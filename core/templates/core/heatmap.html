@@ -1,0 +1,29 @@
+{% comment %}
+  GitHub-style training contributions grid.
+  Context provides: activity.days = list of {date, iso, level, sets, title}
+  arranged week-by-week (7 rows), aligned so the first column starts on the
+  correct weekday. Levels 0-4 (0 = rest/empty).
+{% endcomment %}
+<section class="card">
+  <div class="heatmap-head">
+    <h2>Training activity</h2>
+    <p class="streak-badge" title="Consecutive training days">
+      <strong>{{ activity.streak }}</strong> day streak
+    </p>
+  </div>
+  <div class="heatmap-wrap" role="img"
+       aria-label="Training activity over the last year. Green squares are days with completed working sets.">
+    <div class="heatmap-grid">
+      {% for week in activity.weeks %}
+      <div class="heatmap-col">
+        {% for day in week %}<span class="heat lv{{ day.level }}" title="{{ day.title }}"></span>{% endfor %}
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+  <div class="heatmap-legend">
+    <small class="muted">Less</small>
+    <span class="heat lv0"></span><span class="heat lv1"></span><span class="heat lv2"></span><span class="heat lv3"></span><span class="heat lv4"></span>
+    <small class="muted">More</small>
+  </div>
+</section>
