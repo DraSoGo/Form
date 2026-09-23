@@ -2167,9 +2167,11 @@ nav a[aria-current="page"]::after {
 @media (min-width: 768px) {
   .food-row .food-summary {
     /* Five named columns; every child placed on row 1 explicitly —
-       no auto-placement, no stray rows. */
+       no auto-placement, no stray rows. The macros track sizes to its
+       nowrap content (min 180px) so the P/C/F line can never spill left
+       into the title column. */
     display: grid;
-    grid-template-columns: 32px minmax(0, 1fr) 170px 150px 24px;
+    grid-template-columns: 32px minmax(0, 1fr) minmax(180px, max-content) 150px 24px;
     grid-template-areas: "select name macros kcal chev";
     align-items: center;
     column-gap: 16px;
@@ -2194,6 +2196,7 @@ nav a[aria-current="page"]::after {
   .food-row .food-name {
     grid-area: name;
     padding-right: 0;   /* chevron has its own column now */
+    overflow: hidden;   /* hard stop at the column edge; clamp handles lines */
   }
   .food-row .food-name strong { font-size: 15.5px; line-height: 1.4; }
   .food-row .food-macros {
@@ -2215,7 +2218,41 @@ nav a[aria-current="page"]::after {
     align-self: center;
     justify-self: center;
   }
-  .food-row .food-detail { padding: 0 12px 14px 60px; }
+
+  /* ── Expanded detail panel: compact full-width metrics grid ──────── */
+  .food-row .food-detail { padding: 2px 14px 16px 60px; }
+  .food-row .food-detail-inner { display: grid; gap: 10px; }
+  .food-row .food-detail dl {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 8px 18px;
+    margin: 0;
+  }
+  .food-row .food-detail dl > div { display: grid; gap: 1px; }
+  .food-row .food-detail dt {
+    font-size: 11.5px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: .04em;
+    color: var(--muted);
+  }
+  .food-row .food-detail dd {
+    margin: 0;
+    font-size: 15px;
+    font-weight: 650;
+    color: var(--ink);
+    font-variant-numeric: tabular-nums;
+  }
+  .food-row .food-detail .uncertainty { margin: 0; font-size: 12.5px; }
+  .food-row .food-detail .actions-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+  }
+  .food-row .food-detail .actions-row form { margin: 0; }
+  .food-row .food-detail .actions-row .button,
+  .food-row .food-detail .actions-row button { width: auto; }
 
   /* Intermediate (768–1023px): drop macros under the title so nothing
      overlaps; kcal group + chevron keep their columns. */
@@ -2231,7 +2268,15 @@ nav a[aria-current="page"]::after {
       justify-self: start;
       align-self: start;
     }
+    /* Narrower desktop: 3 metric columns. */
+    .food-row .food-detail dl { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    .food-row .food-detail { padding: 2px 14px 14px 60px; }
   }
+}
+
+/* Wide-desktop extra: keep 4 columns at >= 1100px where they breathe. */
+@media (min-width: 1024px) and (max-width: 1099px) {
+  .food-row .food-detail dl { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 }
 
 
