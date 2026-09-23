@@ -9,25 +9,40 @@
 <div class="pr-list">
   {% for r in records %}
   <details class="pr-item">
-    <summary>
-      <span class="pr-name">{{ r.exercise.name }}</span>
-      <span class="pr-best">
-        <strong>{{ r.weight|floatformat:"1g" }} kg × {{ r.reps }}</strong>
-        <small>est. 1RM {{ r.e1rm|floatformat:1 }} kg · {{ r.date|date:"j M Y" }}</small>
+    <summary class="pr-row" aria-expanded="false">
+      <span class="pr-id">
+        <strong class="pr-name">{{ r.exercise.name }}</strong>
+        <small class="pr-cat">{{ r.exercise.get_activity_type_display }}</small>
       </span>
+      <span class="pr-best">
+        <small class="pr-label">Best set</small>
+        <strong class="pr-value">{{ r.weight|floatformat:"1g" }} kg × {{ r.reps }}</strong>
+      </span>
+      <span class="pr-est">
+        <small class="pr-label">Estimated 1RM</small>
+        <strong class="pr-value">{{ r.e1rm|floatformat:1 }} kg</strong>
+        <small class="pr-date">{{ r.date|date:"j M Y" }}</small>
+      </span>
+      <svg class="pr-chevron" viewBox="0 0 24 24" aria-hidden="true" fill="none"
+           stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="m9 18 6-6-6-6"/>
+      </svg>
     </summary>
-    <div class="table-wrap">
-      <table>
-        <tr><th>Weight</th><th>Reps</th><th>Est. 1RM</th><th>Date</th></tr>
-        {% for s in r.top_sets %}
-        <tr>
-          <td>{{ s.weight|floatformat:"1g" }} kg</td>
-          <td>{{ s.reps }}</td>
-          <td>{{ s.e1rm|floatformat:1 }} kg</td>
-          <td>{{ s.date|date:"j M Y" }}</td>
-        </tr>
-        {% endfor %}
-      </table>
+    <div class="pr-history">
+      <p class="pr-history-title muted">Recent best attempts</p>
+      <div class="table-wrap">
+        <table>
+          <tr><th>Weight</th><th>Reps</th><th>Est. 1RM</th><th>Date</th></tr>
+          {% for s in r.top_sets %}
+          <tr>
+            <td>{{ s.weight|floatformat:"1g" }} kg</td>
+            <td>{{ s.reps }}</td>
+            <td>{{ s.e1rm|floatformat:1 }} kg</td>
+            <td>{{ s.date|date:"j M Y" }}</td>
+          </tr>
+          {% endfor %}
+        </table>
+      </div>
     </div>
   </details>
   {% endfor %}

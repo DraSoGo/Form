@@ -22,6 +22,16 @@ document.addEventListener('click', (e) => {
 });
 
 // =========================================================================
+// Mirror <details class="pr-item"> open state onto the summary's
+// aria-expanded (CSP-safe; no inline ontoggle attributes).
+// =========================================================================
+document.addEventListener('toggle', (e) => {
+  const d = e.target;
+  if (!(d instanceof HTMLDetailsElement) || !d.classList.contains('pr-item')) return;
+  d.querySelector('.pr-row')?.setAttribute('aria-expanded', String(d.open));
+}, true);
+
+// =========================================================================
 // Day-detail add-exercise form: toggle strength/cardio fields from the
 // select's data-activity (moved out of an inline <script> for CSP).
 // =========================================================================
