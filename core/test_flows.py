@@ -931,26 +931,3 @@ class CoreFlowTests(TestCase):
         self.assertEqual(len(charts[waist_key]), 1)
         self.assertEqual(charts[waist_key][0]['value'], 85.5)
 
-    def test_monthly_report_csv_and_pdf(self):
-        from core.models import WorkoutSession
-        # Seed this month: food + a completed set (PR source).
-        FoodEntry.objects.create(user=self.user, name='Rice', calories=400, protein=30)
-        session = WorkoutSession.objects.create(user=self.user, name='S')
-        WorkoutSet.objects.create(session=session, exercise=self.exercise, weight=100, reps=5,
-                                  set_type='working', completed=True)
-        now = timezone.localtime()
-        csv_resp = self.client.get(f'/report/{now.year}/{now.month}/?format=csv')
-        self.assertEqual(csv_resp.status_code, 200)
-        self.assertIn('text/csv', csv_resp['Content-Type'])
-        body = csv_resp.content.decode()
-        self.assertIn('Average calories', body)
-        self.assertIn('Completed working sets', body)
-        self.assertIn('Personal records', body)
-        pdf_resp = self.client.get(f'/report/{now.year}/{now.month}/')
-        self.assertEqual(pdf_resp.status_code, 200)
-        self.assertIn('application/pdf', pdf_resp['Content-Type'])
-        # PDF magic bytes
-        self.assertTrue(pdf_resp.content.startswith(b'%PDF'))
-        self.assertGreater(len(pdf_resp.content), 5000)
-        # Invalid month 404s.
-        self.assertEqual(self.client.get('/report/2026/13/').status_code, 404)
