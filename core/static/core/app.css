@@ -1870,6 +1870,22 @@ nav a[aria-current="page"]::after {
 }
 
 /* Analysis history articles */
+.analysis-day {
+  border-top: 1px solid var(--border);
+  padding: 8px 0 10px;
+}
+.analysis-day:first-of-type { border-top: 0; }
+.analysis-day > summary {
+  font-size: 14px;
+  font-weight: 700;
+  min-height: 32px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+}
+.analysis-day .analysis { padding: 10px 0; }
+.analysis-day .analysis:first-child { border-top: 0; padding-top: 2px; }
 .analysis {
   border-top: 1px solid var(--border);
   padding: 14px 0;

@@ -16,7 +16,7 @@ from .push import validate_subscription
 
 @login_required
 def home(request):
-    return render(request,'coaching/home.html',{'jobs':Job.objects.filter(user=request.user).order_by('-created_at')[:15],'analyses':Analysis.objects.filter(user=request.user).select_related('job').order_by('-created_at')[:20],'suggestions':Suggestion.objects.filter(user=request.user).select_related('job').order_by('-created_at')[:30],'vapid_public':os.environ.get('VAPID_PUBLIC_KEY','')})
+    return render(request,'coaching/home.html',{'jobs':Job.objects.filter(user=request.user).order_by('-created_at')[:15],'analyses':Analysis.objects.filter(user=request.user).select_related('job').order_by('-local_date','-created_at')[:20],'suggestions':Suggestion.objects.filter(user=request.user).select_related('job').order_by('-created_at')[:30],'vapid_public':os.environ.get('VAPID_PUBLIC_KEY','')})
 @login_required
 @require_POST
 def request_analysis(request,task):

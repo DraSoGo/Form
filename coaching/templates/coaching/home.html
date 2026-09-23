@@ -71,26 +71,35 @@
 </section>
 
 {# ── Analysis history (answers first; technical info collapsed) ────── #}
+{# Grouped by local date: each day collapses so history stays compact. #}
 <section class="card">
   <h2>Analysis history</h2>
-  {% for analysis in analyses %}
-    <article class="analysis">
-      <h3>{{ analysis.task|title }} · {{ analysis.local_date }} · version {{ analysis.version }}</h3>
-      {% if analysis.job.payload.message %}
-        <p><strong>You:</strong> {{ analysis.job.payload.message }}</p>
-      {% endif %}
-      <p>{{ analysis.content.summary|linebreaksbr }}</p>
-      {% for highlight in analysis.content.highlights %}<p>• {{ highlight }}</p>{% endfor %}
-      {% if analysis.task == 'food' %}
-        <p>{{ analysis.content.calories_low }}–{{ analysis.content.calories_high }} kcal · {{ analysis.content.confidence }} confidence</p>
-        <p>{{ analysis.content.uncertainty }}</p>
-        <a href="/nutrition/">Review and correct in Nutrition</a>
-      {% endif %}
-      <details class="analysis-details">
-        <summary>Details</summary>
-        <small class="muted">{{ analysis.job.provider }} / {{ analysis.job.model }}</small>
-      </details>
-    </article>
+  {% regroup analyses by local_date as analyses_by_day %}
+  {% for day in analyses_by_day %}
+    <details class="analysis-day" {% if forloop.first %}open{% endif %}>
+      <summary>
+        {{ day.grouper }} <span class="muted">({{ day.list|length }})</span>
+      </summary>
+      {% for analysis in day.list %}
+        <article class="analysis">
+          <h3>{{ analysis.task|title }} · version {{ analysis.version }}</h3>
+          {% if analysis.job.payload.message %}
+            <p><strong>You:</strong> {{ analysis.job.payload.message }}</p>
+          {% endif %}
+          <p>{{ analysis.content.summary|linebreaksbr }}</p>
+          {% for highlight in analysis.content.highlights %}<p>• {{ highlight }}</p>{% endfor %}
+          {% if analysis.task == 'food' %}
+            <p>{{ analysis.content.calories_low }}–{{ analysis.content.calories_high }} kcal · {{ analysis.content.confidence }} confidence</p>
+            <p>{{ analysis.content.uncertainty }}</p>
+            <a href="/nutrition/">Review and correct in Nutrition</a>
+          {% endif %}
+          <details class="analysis-details">
+            <summary>Details</summary>
+            <small class="muted">{{ analysis.job.provider }} / {{ analysis.job.model }}</small>
+          </details>
+        </article>
+      {% endfor %}
+    </details>
   {% empty %}
     <p class="muted">Summaries appear here after the server worker processes your request.</p>
   {% endfor %}
