@@ -14,18 +14,23 @@ Keep JSON keys, enum values, identifiers, numbers, units, and exact before/propo
 def route(task,context,prompt='',image=None,job=None):
     if task not in SCHEMAS: raise ProviderError('invalid_task',False)
     schema = SCHEMAS[task]
-    candidates = TaskRoute.objects.filter(task=task,candidate__available=True,candidate__text_verified=True).select_related('candidate')
+    candidates = list(TaskRoute.objects.filter(task=task,candidate__available=True,candidate__text_verified=True).select_related('candidate'))
     if task=='food':
         if not image: raise ProviderError('image_required',False)
-        candidates=candidates.filter(candidate__vision_verified=True)
+        candidates=[routing for routing in candidates if routing.candidate.vision_verified]
+    if not candidates: raise ProviderError('no_verified_model_configured',False)
     config=providers()
     error='no_verified_model_configured'
-    seen=set()
-    for routing in candidates[:3]:
+    # Up to three attempts total. Transient gateway faults (empty output,
+    # network, rate limit) also re-try the first candidate when the pool
+    # is exhausted, so a single-candidate pool still gets its retries.
+    transient={'empty_response','network_or_timeout','rate_limited','upstream_unavailable'}
+    plan=candidates[:3]
+    sequence=0
+    while sequence<3:
+        routing=plan[sequence] if sequence<len(plan) else plan[0]
         candidate=routing.candidate
-        key=(candidate.provider,candidate.model)
-        if key in seen: continue
-        seen.add(key)
+        sequence+=1
         start=time.monotonic()
         status='success'
         try:
@@ -49,5 +54,9 @@ def route(task,context,prompt='',image=None,job=None):
                 candidate.vision_verified=False;candidate.save(update_fields=['vision_verified'])
             if not exc.failover: raise
         finally:
-            RequestAttempt.objects.create(job=job,task=task,provider=candidate.provider,model=candidate.model,sequence=len(seen),latency_ms=round((time.monotonic()-start)*1000),status=status)
+            RequestAttempt.objects.create(job=job,task=task,provider=candidate.provider,model=candidate.model,sequence=sequence,latency_ms=round((time.monotonic()-start)*1000),status=status)
+        # Only transient errors justify reusing the first candidate for
+        # the remaining attempt budget.
+        if error not in transient and sequence>=len(plan):
+            break
     raise ProviderError(error)

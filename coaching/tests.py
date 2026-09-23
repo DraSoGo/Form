@@ -68,6 +68,24 @@ class CoachingTests(TestCase):
         self.assertEqual(caught.exception.code,'invalid_structured_response');self.assertEqual(mock.call_count,3)
         self.assertEqual(Analysis.objects.count(),0)
     @patch('coaching.router.complete')
+    def test_transient_error_retries_first_candidate_in_single_model_pool(self,mock):
+        # A single-candidate pool must still use its full attempt budget
+        # when the gateway hiccups (empty output / network faults).
+        candidate=ProviderModel.objects.create(provider='gpt',model='solo',text_verified=True)
+        TaskRoute.objects.create(task='daily',candidate=candidate,priority=0)
+        mock.side_effect=[ProviderError('empty_response'),json.dumps(SUMMARY)]
+        result,provider,model=route('daily',{})
+        self.assertEqual(provider,'gpt');self.assertEqual(mock.call_count,2)
+        self.assertEqual(result,SUMMARY)
+        self.assertEqual(list(RequestAttempt.objects.order_by('sequence').values_list('status',flat=True)),['empty_response','success'])
+    @patch('coaching.router.complete')
+    def test_non_transient_error_stops_at_pool_size(self,mock):
+        candidate=ProviderModel.objects.create(provider='gpt',model='solo2',text_verified=True)
+        TaskRoute.objects.create(task='daily',candidate=candidate,priority=0)
+        mock.side_effect=ProviderError('invalid_request',False)
+        with self.assertRaises(ProviderError): route('daily',{})
+        self.assertEqual(mock.call_count,1)
+    @patch('coaching.router.complete')
     def test_vision_needs_verification(self,mock):
         self.candidates('food')
         with self.assertRaises(ProviderError): route('food',{},image=('image/png',b'test'))
