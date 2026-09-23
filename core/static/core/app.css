@@ -331,17 +331,22 @@ input::placeholder, textarea::placeholder { color: var(--muted); }
 input:hover, select:hover, textarea:hover { border-color: var(--primary); }
 
 input[type=checkbox], input[type=radio] {
-  /* Reset the global input appearance:none — without it the browser draws
-     no checkmark, so ticking appears to do nothing. */
+  /* Full reset of the global text-input rule above (width:100%, padding,
+     min-height, background): a checkbox must stay a small native control.
+     The old reset missed padding/background, so checkboxes rendered as
+     large flat gray squares (surface-2 painted over the native check). */
   -webkit-appearance: auto;
   appearance: auto;
-  width: 20px;
-  height: 20px;
-  min-height: 20px;
+  width: 19px;
+  height: 19px;
+  min-height: 19px;
+  min-width: 19px;
+  padding: 0;
   margin: 0 8px 0 0;
   vertical-align: middle;
   accent-color: var(--primary);
-  background: var(--surface-2);
+  background: transparent;
+  border: none;
   border-radius: 4px;
 }
 input[type=file] { overflow: hidden; padding: 10px 12px; }
@@ -2036,18 +2041,24 @@ nav a[aria-current="page"]::after {
   gap: 0;
 }
 .food-row .food-select {
-  /* 44px tap target wrapping the checkbox — the whole area toggles. */
+  /* Selection row: checkbox + label, whole strip toggles (≥44px target). */
   display: flex;
   align-items: center;
-  justify-content: center;
-  min-width: 48px;
-  align-self: stretch;
+  gap: 10px;
+  min-height: 44px;
+  padding: 0 4px;
   cursor: pointer;
   flex: 0 0 auto;
+  -webkit-tap-highlight-color: transparent;
+}
+.food-select-label {
+  font-size: 13px;
+  color: var(--muted);
+  white-space: nowrap;
 }
 .food-row .food-checkbox {
-  width: 22px;
-  height: 22px;
+  width: 19px;
+  height: 19px;
   margin: 0;
   flex: 0 0 auto;
   accent-color: var(--primary);
@@ -2222,11 +2233,13 @@ main { min-width: 0; }
     overflow: hidden;
   }
   .food-row .food-select {
-    position: absolute;  /* overlay top-left of the card, still 44px tappable */
-    top: 0; left: 0; z-index: 2;
-    width: 48px; height: 48px;
-    min-width: 48px;
-    background: transparent;
+    /* Selection sits on its own full-width row above the food title —
+       never overlaid on top of the name (the old absolute overlay put the
+       checkbox square over the first line of Thai text). */
+    width: 100%;
+    min-width: 0;
+    min-height: 44px;
+    padding: 8px 12px 2px;
   }
   .food-row .food-details { min-width: 0; }
   .food-row .food-summary {
@@ -2237,7 +2250,7 @@ main { min-width: 0; }
       "chips  chips";
     align-items: center;
     gap: 4px 10px;
-    padding: 14px 12px 12px 52px;  /* left space for the checkbox */
+    padding: 6px 12px 12px;
     min-height: 64px;
   }
   .food-row .food-name { grid-area: name; min-width: 0; }
