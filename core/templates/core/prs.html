@@ -9,7 +9,7 @@
 <div class="pr-list">
   {% for r in records %}
   <details class="pr-item">
-    <summary class="pr-row" aria-expanded="false">
+    <summary class="pr-row" aria-expanded="false" aria-label="Show recent attempts for {{ r.exercise.name }}">
       <span class="pr-id">
         <strong class="pr-name">{{ r.exercise.name }}</strong>
         <small class="pr-cat">{{ r.exercise.get_activity_type_display }}</small>

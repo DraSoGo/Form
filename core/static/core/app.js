@@ -23,12 +23,16 @@ document.addEventListener('click', (e) => {
 
 // =========================================================================
 // Mirror <details class="pr-item"> open state onto the summary's
-// aria-expanded (CSP-safe; no inline ontoggle attributes).
+// aria-expanded and toggle label (CSP-safe; no inline ontoggle attributes).
 // =========================================================================
 document.addEventListener('toggle', (e) => {
   const d = e.target;
   if (!(d instanceof HTMLDetailsElement) || !d.classList.contains('pr-item')) return;
-  d.querySelector('.pr-row')?.setAttribute('aria-expanded', String(d.open));
+  const row = d.querySelector('.pr-row');
+  if (!row) return;
+  row.setAttribute('aria-expanded', String(d.open));
+  const name = d.querySelector('.pr-name')?.textContent.trim() || 'this exercise';
+  row.setAttribute('aria-label', (d.open ? 'Hide' : 'Show') + ' recent attempts for ' + name);
 }, true);
 
 // =========================================================================

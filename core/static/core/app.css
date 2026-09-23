@@ -2485,9 +2485,13 @@ main { min-width: 0; }
   color: var(--ink);
 }
 .pr-row::-webkit-details-marker { display: none; }
-/* Override the global summary::after "+": this row uses its own rotating
-   chevron instead of the generic disclosure marker. */
-.pr-row::after { content: none; }
+/* Kill the global disclosure marker with BOTH shapes: the plain
+   `summary::after` (+) and the higher-specificity `details[open] >
+   summary::after` (−). The [open] variant (0,1,2) used to beat the old
+   single-class override and painted a stray − into the grid. This row's
+   only toggle is the rotating chevron. */
+details > .pr-row::after,
+details[open] > .pr-row::after { content: none; }
 .pr-row:focus-visible {
   outline: 2px solid var(--primary);
   outline-offset: -2px;
