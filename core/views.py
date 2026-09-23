@@ -8,7 +8,7 @@ from django.contrib.auth import logout, update_session_auth_hash
 from django.contrib.auth.forms import PasswordChangeForm
 from django.core.exceptions import ValidationError
 from django.db import connection, transaction
-from django.db.models import Avg, Max, Sum
+from django.db.models import Avg, F, Max, Sum
 from django.db.models import functions as db_functions
 from django.http import FileResponse, HttpResponse, JsonResponse, Http404
 from django.shortcuts import render, redirect, get_object_or_404
@@ -109,7 +109,7 @@ def dashboard(request):
             "muscle_groups": muscle_groups,
             "activity": training_activity(request.user),
             "foods": FoodEntry.objects.filter(
-                user=request.user, recorded_at__gte=start
+                user=request.user, recorded_at__gte=start, recorded_at__lt=end
             )[:5],
             "sessions": WorkoutSession.objects.filter(user=request.user)[:3],
         },
@@ -1027,7 +1027,11 @@ def session_detail(request, pk):
 def set_edit(request, pk):
     item = get_object_or_404(WorkoutSet, pk=pk, session__user=request.user)
     form = SetForm(request.POST or None, instance=item)
-    form.fields["exercise"].queryset = Exercise.objects.filter(user=request.user)
+    # Strength sets must reference strength exercises (cardio rows have
+    # their own editor) — mixing them corrupts PR/volume reporting.
+    form.fields["exercise"].queryset = Exercise.objects.filter(
+        user=request.user, activity_type="strength"
+    )
     if request.method == "POST" and form.is_valid():
         form.save()
         return redirect("/workouts/session/" + str(item.session_id) + "/")
@@ -1147,37 +1151,44 @@ def trends(request):
         for s in sleep_qs
     ]
     performance = []
-    for exercise in Exercise.objects.filter(user=request.user):
-        sets = (
-            WorkoutSet.objects.filter(
-                session__user=request.user,
-                exercise=exercise,
-                completed=True,
-            )
-            .exclude(set_type="warmup")
-            .select_related("session")
-            .order_by("session__started_at")
+    # One query for every exercise's completed sets (the old loop fired a
+    # set query per exercise), local-timezone dates (UTC formatting used
+    # to shift post-midnight sessions to the previous day) and a bounded
+    # window for the All view (days=0 previously loaded full history).
+    perf_start = start
+    if perf_start is None:
+        perf_start = timezone.now() - timedelta(days=365)
+    perf_rows = (
+        WorkoutSet.objects.filter(
+            session__user=request.user,
+            session__started_at__gte=perf_start,
+            completed=True,
         )
-        if start is not None:
-            sets = sets.filter(session__started_at__gte=start)
-        entries = [
+        .exclude(set_type="warmup")
+        .exclude(weight__isnull=True)
+        .annotate(ex_name=F("exercise__name"), started=F("session__started_at"))
+        .values("exercise_id", "ex_name", "weight", "reps", "rir", "rpe", "started")
+        .order_by("started")
+    )
+    by_exercise = {}
+    for row in perf_rows:
+        by_exercise.setdefault((row["exercise_id"], row["ex_name"]), []).append(
             {
-                "date": s.session.started_at.strftime("%d %b"),
-                "weight": s.weight,
-                "reps": s.reps,
-                "rir": s.rir,
-                "rpe": s.rpe,
+                "date": timezone.localtime(row["started"]).strftime("%d %b"),
+                "weight": row["weight"],
+                "reps": row["reps"],
+                "rir": row["rir"],
+                "rpe": row["rpe"],
             }
-            for s in sets
-        ]
-        if entries:
-            performance.append(
-                {
-                    "name": exercise.name,
-                    "entries": entries,
-                    "pr": max(s["weight"] for s in entries),
-                }
-            )
+        )
+    for (_pk, name), entries in by_exercise.items():
+        performance.append(
+            {
+                "name": name,
+                "entries": entries,
+                "pr": max(e["weight"] for e in entries),
+            }
+        )
     # Summary cards
     workout_qs = WorkoutSession.objects.filter(user=request.user)
     if start is not None:

@@ -1,5 +1,6 @@
 import json
 import os
+from django.contrib.auth import get_user_model
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.core.exceptions import ValidationError
@@ -54,8 +55,19 @@ def food(request,pk):
         messages.success(request,'Food analysis queued. Estimates remain editable in Nutrition.')
     except ValidationError as exc: messages.error(request,' '.join(exc.messages))
     return redirect('coaching:home')
+def _is_owner(user):
+    """The first created account is the single owner (bootstrap_owner
+    semantics): only the owner may discover/test AI providers and change
+    routing — these actions spend credit and affect every account."""
+    first = get_user_model().objects.order_by('pk').values_list('pk', flat=True).first()
+    return user is not None and user.pk == first
+
+
 @login_required
 def settings_view(request):
+    if not _is_owner(request.user):
+        messages.error(request, 'Only the owner can manage AI models and routing.')
+        return redirect('coaching:home')
     if request.method=='POST':
         try:
             action=request.POST.get('action')

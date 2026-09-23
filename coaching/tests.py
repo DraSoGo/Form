@@ -735,3 +735,27 @@ class PushOwnershipTests(TestCase):
         self.assertEqual(response.status_code, 200)
         sub = PushSubscription.objects.get(endpoint='https://fcm.googleapis.com/fcm/send/xyz')
         self.assertEqual(sub.keys, {'p256dh': 'bm5ubm5ubm5ubm5ubm5ubm5ubm5ubm5ubm5ubm5ubm5ubm5ubm5ubm5ubm5ubm5ubm5ubm5ubm5ubm5ubm5ubm4', 'auth': 'bm5ubm5ubm5ubm5ubm5ubg'})
+
+class OwnerGateTests(TestCase):
+    """Only the first-created account (the bootstrap owner) may manage AI
+    provider discovery/testing/routing — these spend credit globally."""
+    def test_non_owner_cannot_open_settings(self):
+        get_user_model().objects.create_user('first', password='x'*12)
+        second = get_user_model().objects.create_user('second', password='x'*12)
+        c = Client(); c.force_login(second)
+        r = c.get('/coach/settings/')
+        self.assertEqual(r.status_code, 302)
+        self.assertEqual(r.url, '/coach/')
+    def test_owner_can_open_settings(self):
+        owner = get_user_model().objects.create_user('first', password='x'*12)
+        c = Client(); c.force_login(owner)
+        r = c.get('/coach/settings/')
+        self.assertEqual(r.status_code, 200)
+    def test_non_owner_post_is_rejected(self):
+        get_user_model().objects.create_user('first', password='x'*12)
+        second = get_user_model().objects.create_user('second', password='x'*12)
+        c = Client(); c.force_login(second)
+        r = c.post('/coach/settings/', data={'action': 'discover', 'provider': 'gpt'})
+        self.assertEqual(r.status_code, 302)
+        # No discovery side effect: no model rows created.
+        self.assertEqual(ProviderModel.objects.count(), 0)

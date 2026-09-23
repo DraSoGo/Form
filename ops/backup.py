@@ -191,6 +191,13 @@ def backup():
     stamp = dt.datetime.now(dt.timezone.utc).strftime('%Y%m%dT%H%M%SZ') + '-' + uuid.uuid4().hex[:8]
     path = ROOT / 'snapshots' / ('.partial-' + stamp)
     path.mkdir()
+    # Sweep snapshot directories abandoned by failed runs (crash, OOM,
+    # interrupted service): they otherwise accumulate forever and are
+    # never valid snapshots (no rename to the published name happened).
+    for stale in (ROOT / 'snapshots').glob('.partial-*'):
+        if stale != path and stale.is_dir():
+            shutil.rmtree(stale, ignore_errors=True)
+            print(f'warning: removed abandoned snapshot directory {stale.name}', file=sys.stderr)
     # Freeze media mutations across DB dump/media copy, then always resume.
     compose = ['docker', 'compose', '--project-directory', str(APP)]
     running = run(compose + ['ps', '--status', 'running', '--services'], stdout=subprocess.PIPE).stdout.decode().splitlines()
@@ -224,7 +231,15 @@ def backup():
         atomic_json(path / 'manifest.json', {'format': 2, 'created': stamp, 'media': media, 'database': expected_database})
     finally:
         if stopped:
-            run(compose + ['start', *stopped])
+            try:
+                run(compose + ['start', *stopped])
+            except Exception as start_exc:
+                # Production services staying DOWN is worse than the backup
+                # failure itself: make it loud, keep the original error.
+                print(f'CRITICAL: backup failed AND services could not restart '
+                      f'({start_exc}); manual `docker compose start web worker` needed',
+                      file=sys.stderr)
+                raise
     revision = deployed_revision()
     config = {'revision': revision, 'files': {name: (APP / name).read_text() for name in ['compose.yaml', '.env.example', 'Dockerfile', 'requirements.txt', 'requirements.lock']}}
     atomic_json(path / 'config.json', config)

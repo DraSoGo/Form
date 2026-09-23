@@ -966,3 +966,16 @@ class CoreFlowTests(TestCase):
         self.assertIn('AI failed', html)
         self.assertIn('Retry analysis', html)
         self.assertIn(f'/coach/retry/', html)
+
+    def test_set_edit_form_excludes_cardio_exercises(self):
+        # Strength set editor must only offer strength exercises.
+        plan = create_plan(self.user, self.plan_data())
+        session = start_session(self.user, plan, 'Push')
+        item = session.sets.first()
+        cardio_ex = Exercise.objects.create(user=self.user, name='Rowing', activity_type='cardio')
+        response = self.client.get(f'/workouts/set/{item.pk}/')
+        self.assertEqual(response.status_code, 200)
+        form = response.context['form']
+        offered = list(form.fields['exercise'].queryset.values_list('pk', flat=True))
+        self.assertNotIn(cardio_ex.pk, offered)
+        self.assertIn(self.exercise.pk, offered)
