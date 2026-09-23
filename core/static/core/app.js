@@ -32,6 +32,29 @@ document.addEventListener('toggle', (e) => {
 }, true);
 
 // =========================================================================
+// Food diary: clicking the selection checkbox (now inside <summary>) must
+// toggle the checkbox, never expand/collapse the entry.
+// =========================================================================
+document.addEventListener('click', (e) => {
+  const select = e.target.closest('.food-summary .food-select');
+  if (!select) return;
+  // Stop the click from reaching <summary> (which would toggle details).
+  e.preventDefault();
+  e.stopPropagation();
+  const cb = select.querySelector('.food-checkbox');
+  if (!cb) return;
+  if (e.target === cb) {
+    // The browser default already flipped it before our preventDefault;
+    // flip it back to match, then fire change so listeners stay in sync.
+    cb.checked = !cb.checked;
+    cb.dispatchEvent(new Event('change', { bubbles: true }));
+    return;
+  }
+  cb.checked = !cb.checked;
+  cb.dispatchEvent(new Event('change', { bubbles: true }));
+}, true);
+
+// =========================================================================
 // Day-detail add-exercise form: toggle strength/cardio fields from the
 // select's data-activity (moved out of an inline <script> for CSP).
 // =========================================================================
