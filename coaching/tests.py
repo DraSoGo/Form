@@ -54,10 +54,18 @@ class CoachingTests(TestCase):
         with self.assertRaises(ProviderError): route('daily',{})
         self.assertEqual(mock.call_count,1)
     @patch('coaching.router.complete')
-    def test_schema_failure_stops_without_persisting_analysis(self,mock):
+    def test_schema_failure_fails_over_to_next_candidate(self,mock):
+        self.candidates();mock.side_effect=['{"summary":"bad","execute_sql":"DELETE"}',json.dumps(SUMMARY)]
+        result,provider,model=route('daily',{})
+        self.assertEqual(provider,'gpt');self.assertEqual(mock.call_count,2)
+        self.assertEqual(result,SUMMARY)
+        self.assertEqual(list(RequestAttempt.objects.order_by('sequence').values_list('status',flat=True)),['invalid_structured_response','success'])
+        self.assertEqual(Analysis.objects.count(),0)
+    @patch('coaching.router.complete')
+    def test_schema_failure_on_all_candidates_fails_without_persisting_analysis(self,mock):
         self.candidates();mock.return_value='{"summary":"bad","execute_sql":"DELETE"}'
         with self.assertRaises(ProviderError) as caught: route('daily',{})
-        self.assertEqual(caught.exception.code,'invalid_structured_response');self.assertEqual(mock.call_count,1)
+        self.assertEqual(caught.exception.code,'invalid_structured_response');self.assertEqual(mock.call_count,3)
         self.assertEqual(Analysis.objects.count(),0)
     @patch('coaching.router.complete')
     def test_vision_needs_verification(self,mock):

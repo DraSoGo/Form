@@ -35,8 +35,11 @@ def route(task,context,prompt='',image=None,job=None):
             result=schema.model_validate_json(raw)
             return result.model_dump(mode='json'),candidate.provider,candidate.model
         except ValidationError:
+            # A model that cannot follow the JSON schema is a model problem,
+            # not an input problem: fall through to the next candidate and
+            # only fail when every candidate has been tried.
             status='invalid_structured_response'
-            raise ProviderError(status,False) from None
+            error=status
         except ProviderError as exc:
             error=exc.code
             status=error
