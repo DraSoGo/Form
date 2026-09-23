@@ -670,3 +670,38 @@ class FoodReestimateTests(TestCase):
         entry=FoodEntry.objects.create(user=self.user,name='No photo')
         with self.assertRaises(ValidationError):
             enqueue_food(self.user,entry)
+
+class NoteOnlyAllUnknownRefsTests(TestCase):
+    """Regression: an AI answer whose ref_keys are ALL absent from the
+    reference table (e.g. a dish the table simply lacks) must save as an
+    incomplete meal for the user to fix — not fail the job."""
+    password='test-owner-long-password'
+    def setUp(self):
+        self.user=get_user_model().objects.create_user('owner3',password=self.password)
+        Profile.objects.create(user=self.user,summary_time=time(21))
+    @patch('coaching.services.route')
+    def test_all_unknown_ref_keys_saves_incomplete_not_failed(self,mock):
+        from coaching.services import enqueue_food,claim_job,run_job
+        result=self._food_v3([
+            {'ref_key':'shrimp_fried_rice','name_th':'ข้าวผัดกุ้ง','weight_g':350,'min_g':300,'max_g':400,'user_confirmed':False},
+            {'ref_key':'fried_egg_sunny_side_up','name_th':'ไข่ดาว','weight_g':50,'min_g':40,'max_g':60,'user_confirmed':False},
+        ]) if hasattr(self,'_food_v3') else None
+        entry=FoodEntry.objects.create(user=self.user,name='ข้าวผัดกุ้ง',note='ข้าวผัดกุ้ง 1 จาน ไข่ดาว 1 ฟอง')
+        mock.return_value=(
+            {'dish_name_th':'ข้าวผัดกุ้งใส่ไข่ดาว','cuisine':'ไทย','strategy':'whole_dish',
+             'items':[
+                {'ref_key':'shrimp_fried_rice','name_th':'ข้าวผัดกุ้ง','weight_g':350,'min_g':300,'max_g':400,'user_confirmed':False,'fraction_consumed':1.0},
+                {'ref_key':'fried_egg_sunny_side_up','name_th':'ไข่ดาว','weight_g':50,'min_g':40,'max_g':60,'user_confirmed':False,'fraction_consumed':1.0},
+             ],
+             'unmatched':[],'confidence':'medium','completeness':'complete','uncertainty_factors_thai':[]},
+            'gpt','text-test')
+        enqueue_food(self.user,entry,reestimate=True)
+        job=claim_job();run_job(job)
+        job.refresh_from_db();entry.refresh_from_db()
+        self.assertEqual(job.status,'done')
+        self.assertEqual(entry.state,'ai_estimated')
+        names=[u['name_th'] for u in entry.ai_breakdown['unmatched']]
+        self.assertIn('ข้าวผัดกุ้ง',names)
+        self.assertIn('ไข่ดาว',names)
+        self.assertEqual(entry.ai_breakdown['items'],[])
+        self.assertEqual(entry.ai_breakdown['completeness'],'incomplete')

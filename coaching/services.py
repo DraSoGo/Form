@@ -125,8 +125,11 @@ def _resolve_estimate(result):
             "estimated_share": "major" if item.weight_g >= 40 else "minor",
             "note": f"ไม่มีในตารางอ้างอิง (ref_key: {item.ref_key}) — เพิ่มเป็นส่วนประกอบเองได้",
         })
-    if not items and demoted:
-        raise ProviderError('food_review_needed', False)
+    # All ref_keys unknown → items may be empty; the meal is still valid,
+    # just fully unmatched (INCOMPLETE) so the user can fix it in the UI.
+    # (Raising here used to kill note-only analyses of dishes absent from
+    # the reference table — e.g. ข้าวผัดกุ้ง — before the correction loop
+    # or the user ever saw a result.)
     computed = compute_meal(
         items,
         dish_name=estimate.dish_name_th,
@@ -258,9 +261,12 @@ def run_job(job):
                     from decimal import Decimal
                     for src, dst in [('kcal','calories'),('protein','protein'),('carbs','carbs'),('fat','fat'),('fiber','fiber'),('sugar','sugar'),('sodium','sodium')]:
                         value = totals.get(src)
-                        if value is not None:
-                            value = Decimal(str(round(float(value), 2)))
-                        setattr(entry, dst, value)
+                        if value is None:
+                            # Fully unmatched meal: keep the previous value
+                            # instead of writing NULL into NOT NULL columns
+                            # (full_clean used to reject the whole save).
+                            continue
+                        setattr(entry, dst, Decimal(str(round(float(value), 2))))
                     entry.name = food_estimate.dish_name_th[:160]
                     item_desc = '; '.join(
                         f"{item.name_th or item.ref_key} {item.weight_g:.0f}g"
