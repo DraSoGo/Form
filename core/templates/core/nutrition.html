@@ -211,6 +211,12 @@
 
                 <div class="actions-row">
                   <a class="button secondary" href="/nutrition/{{ f.pk }}/">Edit</a>
+                  {# Quick AI estimate without opening the edit page. #}
+                  <form method="post" action="/coach/food/{{ f.pk }}/" style="margin:0">
+                    {% csrf_token %}
+                    <input type="hidden" name="reestimate" value="1">
+                    <button class="secondary" type="submit">Estimate with AI</button>
+                  </form>
                   <form method="post" action="/delete/food/{{ f.pk }}/" style="margin:0">
                     {% csrf_token %}
                     <button class="secondary" type="submit"

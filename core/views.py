@@ -17,7 +17,7 @@ from .models import *
 from .forms import *
 from .services import *
 from .archive import export_archive, validate_archive, import_archive, export_csv
-from .muscles import muscle_summary, region_states
+from .muscles import muscle_summaries, muscle_summary, region_states
 
 
 def health(request):
@@ -83,9 +83,13 @@ def dashboard(request):
                     {"name": name, "detail": f"{item.get('sets', 3)} × {item.get('rep_min', 8)}–{item.get('rep_max', 12)}"}
                 )
         today_exercises = today_exercises[:6]
+    # One query for every muscle group (the old per-muscle calls re-fetched
+    # the same 7-day sets ten times per dashboard load).
+    summaries = muscle_summaries(request.user)
     muscle_groups = [
-        {"key": muscle, **muscle_summary(request.user, muscle)}
+        {"key": muscle, **summaries[muscle]}
         for muscle in ["chest", "back", "shoulders", "biceps", "triceps", "abs", "glutes", "quads", "hamstrings", "calves"]
+        if muscle in summaries
     ]
     return render(
         request,

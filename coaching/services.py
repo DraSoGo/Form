@@ -42,18 +42,18 @@ def food_snapshot(entry):
 
 def enqueue_food(user,entry,reestimate=False):
     if not entry.image and not reestimate: raise ValidationError('This entry has no retained photograph.')
-    payload={'entry':str(entry.pk),'snapshot':food_snapshot(entry)}
+    # A previous food job still waiting would run against a stale snapshot
+    # and die with food_changed_review_required; replace it instead.
+    Job.objects.filter(user=user,task='food',status__in=('pending','running'),payload__entry=str(entry.pk)).delete()
+    payload={'entry':str(entry.pk)}
     if reestimate:
         # User-confirmed components ride along: the AI must keep them fixed
-        # and only estimate the remaining unmatched parts.
-        payload['reestimate']={
-            'confirmed':[
-                {'name_th':i.get('name_th',''),'ref_key':i.get('ref_key'),
-                 'weight_g':i.get('weight_g'),'user_confirmed':bool(i.get('user_confirmed'))}
-                for i in (entry.ai_breakdown or {}).get('items',[])
-            ],
-            'unmatched':(entry.ai_breakdown or {}).get('unmatched',[]),
-        }
+        # and only estimate the remaining unmatched parts. The breakdown is
+        # re-read when the job runs, so saving between enqueue and run is
+        # fine (the old snapshot made these jobs die instantly).
+        payload['reestimate']=True
+    else:
+        payload['snapshot']=food_snapshot(entry)
     return enqueue(user,'food',payload)
 
 def exercise_snapshot(exercise):
@@ -205,8 +205,10 @@ def run_job(job):
                     im=Image.open(photo);im.thumbnail((1600,1600));buf=BytesIO();im.convert('RGB').save(buf,format='JPEG',quality=85)
                     image=('image/jpeg',buf.getvalue())
             if reestimate:
-                confirmed=reestimate.get('confirmed') or []
-                lines=[f"- {c['name_th'] or c.get('ref_key')}: {c.get('weight_g')}g" for c in confirmed if c.get('weight_g')]
+                # Read the CURRENT breakdown at run time — the user may have
+                # saved edits between clicking the button and this job run.
+                confirmed=[i for i in (entry.ai_breakdown or {}).get('items',[]) if i.get('weight_g')]
+                lines=[f"- {i.get('name_th') or i.get('ref_key')}: {i.get('weight_g')}g" for i in confirmed]
                 prompt=(
                     _food_prompt((entry.name + ' ' + entry.note)[:2000])
                     + "\n\nThe user has CONFIRMED these components at these exact weights — keep each one with user_confirmed=true and its exact weight:\n"
@@ -246,7 +248,10 @@ def run_job(job):
             if locked.status!='running' or locked.attempts!=job.attempts: return
             if job.task=='food':
                 entry=m.FoodEntry.objects.select_for_update().get(pk=job.payload['entry'],user=job.user)
-                if food_snapshot(entry)!=job.payload['snapshot']: raise ProviderError('food_changed_review_required',False)
+                # Re-estimate jobs read the breakdown at run time, so there
+                # is no snapshot to guard; plain analyses still protect
+                # against overwriting user corrections made after enqueue.
+                if not reestimate and food_snapshot(entry)!=job.payload.get('snapshot'): raise ProviderError('food_changed_review_required',False)
 
                 totals = food_computed['totals']
                 range_kcal = food_computed['range_kcal']

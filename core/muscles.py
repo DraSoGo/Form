@@ -289,7 +289,20 @@ def muscle_summary(user, muscle_key, days=7, on_date=None):
 
     on_date limits counting to a single user-local day.
     """
-    direct = indirect = 0
+    return muscle_summaries(user, days=days, on_date=on_date).get(
+        muscle_key, {"direct": 0, "indirect": 0}
+    )
+
+
+def muscle_summaries(user, muscle_key=None, days=7, on_date=None):
+    """Direct/indirect set counts for EVERY canonical muscle in one query.
+
+    muscle_key is accepted for signature parity with muscle_summary but
+    ignored — this always computes the full map (the dashboard used to
+    call muscle_summary ten times, each re-fetching the same sets).
+    """
+    direct = {m: 0 for m in MUSCLES}
+    indirect = {m: 0 for m in MUSCLES}
     sets = WorkoutSet.objects.filter(
         session__user=user,
         completed=True,
@@ -305,13 +318,13 @@ def muscle_summary(user, muscle_key, days=7, on_date=None):
         sets = sets.filter(session__started_at__gte=since)
     sets = sets.select_related("exercise")
     for s in sets:
-        primary = {normalize(m) for m in s.exercise.primary_muscles or []}
-        secondary = {normalize(m) for m in s.exercise.secondary_muscles or []}
-        if muscle_key in primary:
-            direct += 1
-        if muscle_key in secondary:
-            indirect += 1
-    return {"direct": direct, "indirect": indirect}
+        for key in {normalize(m) for m in s.exercise.primary_muscles or []}:
+            if key in direct:
+                direct[key] += 1
+        for key in {normalize(m) for m in s.exercise.secondary_muscles or []}:
+            if key in indirect:
+                indirect[key] += 1
+    return {m: {"direct": direct[m], "indirect": indirect[m]} for m in MUSCLES}
 
 
 def recovery_by_muscle(user):

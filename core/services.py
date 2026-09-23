@@ -2,12 +2,13 @@ import io, uuid
 from datetime import timedelta
 from decimal import Decimal
 from pathlib import Path
+from types import SimpleNamespace
 from PIL import Image, UnidentifiedImageError
 from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.core.exceptions import ValidationError
 from django.db import transaction
-from django.db.models import Count, Sum
+from django.db.models import Count, F, FloatField, Max, Sum, Value
 from django.db.models import functions as db_functions
 from django.utils import timezone
 from .models import *
@@ -294,53 +295,60 @@ def estimate_1rm(weight, reps):
     return round(float(weight) * (1 + reps / 30.0), 1)
 
 
-def personal_records(user):
+def personal_records(user, days=365):
     """Best completed working set per strength exercise, newest first.
 
     Returns a list of {exercise, weight, reps, e1rm, date, top_sets} where
     top_sets lists the five heaviest completed working sets by e1RM.
+    Bounded to the last `days` (default a year) and fetches only the
+    columns needed — this used to load every historical set with full
+    exercise/session rows on each PR-page view.
     """
-    sets = list(
+    since = timezone.now() - timedelta(days=days)
+    rows = list(
         WorkoutSet.objects.filter(
             session__user=user,
-            session__user__isnull=False,
+            session__started_at__gte=since,
             completed=True,
             set_type="working",
             exercise__activity_type="strength",
             exercise__archived=False,
         )
         .exclude(weight__isnull=True)
-        .select_related("exercise", "session")
-        .order_by("session__started_at")
+        .annotate(started=F("session__started_at"), ex_name=F("exercise__name"))
+        .values(
+            "id", "exercise_id", "ex_name", "weight", "reps",
+            "rpe", "rir", "started",
+        )
+        .order_by("started")
     )
     # Per-exercise RIR/RPE for the effort strip: last N logged efforts in
     # chronological order (RPE 10/RIR 0 = hardest).
     effort_by_exercise = {}
-    for s in sets:
-        if s.rpe is not None or s.rir is not None:
-            effort_by_exercise.setdefault(s.exercise.pk, []).append(
-                {"date": timezone.localdate(s.session.started_at).isoformat(),
-                 "rpe": float(s.rpe) if s.rpe is not None else None,
-                 "rir": float(s.rir) if s.rir is not None else None}
-            )
     by_exercise = {}
-    for s in sets:
-        e1rm = estimate_1rm(s.weight, s.reps)
+    for r in rows:
+        if r["rpe"] is not None or r["rir"] is not None:
+            effort_by_exercise.setdefault(r["exercise_id"], []).append(
+                {"date": timezone.localdate(r["started"]).isoformat(),
+                 "rpe": float(r["rpe"]) if r["rpe"] is not None else None,
+                 "rir": float(r["rir"]) if r["rir"] is not None else None}
+            )
+        e1rm = estimate_1rm(r["weight"], r["reps"])
         if e1rm is None:
             continue
-        by_exercise.setdefault(s.exercise.pk, []).append(
-            {"set": s, "e1rm": e1rm}
+        by_exercise.setdefault(r["exercise_id"], []).append(
+            {"row": r, "e1rm": e1rm}
         )
     records = []
     for entries in by_exercise.values():
-        best = max(entries, key=lambda e: (e["e1rm"], e["set"].weight))
-        s = best["set"]
-        top = sorted(entries, key=lambda e: (-e["e1rm"], -e["set"].weight))[:5]
+        best = max(entries, key=lambda e: (e["e1rm"], e["row"]["weight"]))
+        top = sorted(entries, key=lambda e: (-e["e1rm"], -e["row"]["weight"]))[:5]
+        r = best["row"]
         # Daily best e1RM over time for the progress chart (most recent 20
         # points; one point per session day keeps the line readable).
         by_day = {}
         for e in entries:
-            day = timezone.localdate(e["set"].session.started_at)
+            day = timezone.localdate(e["row"]["started"])
             if day not in by_day or e["e1rm"] > by_day[day]:
                 by_day[day] = e["e1rm"]
         progress = [
@@ -361,20 +369,26 @@ def personal_records(user):
             chart = " ".join(pts)
         records.append(
             {
-                "exercise": s.exercise,
-                "weight": float(s.weight),
-                "reps": s.reps,
+                # Lightweight stand-in for the Exercise row: only pk/name/
+                # activity label are used by the PR templates.
+                "exercise": SimpleNamespace(
+                    pk=r["exercise_id"],
+                    name=r["ex_name"],
+                    get_activity_type_display="Strength / weights",
+                ),
+                "weight": float(r["weight"]),
+                "reps": r["reps"],
                 "e1rm": best["e1rm"],
-                "date": timezone.localdate(s.session.started_at),
+                "date": timezone.localdate(r["started"]),
                 "progress": progress,
                 "chart": chart,
-                "effort": effort_by_exercise.get(s.exercise.pk, [])[-8:],
+                "effort": effort_by_exercise.get(r["exercise_id"], [])[-8:],
                 "top_sets": [
                     {
-                        "weight": float(e["set"].weight),
-                        "reps": e["set"].reps,
+                        "weight": float(e["row"]["weight"]),
+                        "reps": e["row"]["reps"],
                         "e1rm": e["e1rm"],
-                        "date": timezone.localdate(e["set"].session.started_at),
+                        "date": timezone.localdate(e["row"]["started"]),
                     }
                     for e in top
                 ],
@@ -386,22 +400,27 @@ def personal_records(user):
 
 def is_personal_record(user, exercise_id, weight, reps):
     """True when (weight, reps, e1RM) beats every earlier completed working
-    set of this exercise. Used to celebrate new PRs on set completion."""
+    set of this exercise. Used to celebrate new PRs on set completion.
+    The previous e1RM maximum is computed in SQL (no full set scan)."""
     e1rm = estimate_1rm(weight, reps)
     if e1rm is None:
         return False
-    earlier = WorkoutSet.objects.filter(
-        session__user=user,
-        exercise_id=exercise_id,
-        completed=True,
-        set_type="working",
-    ).exclude(weight__isnull=True)
-    best = 0.0
-    for s in earlier:
-        candidate = estimate_1rm(s.weight, s.reps)
-        if candidate and candidate > best:
-            best = candidate
-    return e1rm > best
+    best = (
+        WorkoutSet.objects.filter(
+            session__user=user,
+            exercise_id=exercise_id,
+            completed=True,
+            set_type="working",
+        )
+        .exclude(weight__isnull=True)
+        .aggregate(
+            max_e1rm=Max(
+                F("weight") * (Value(1.0) + F("reps") / Value(30.0)),
+                output_field=FloatField(),
+            )
+        )["max_e1rm"]
+    )
+    return e1rm > float(best or 0)
 
 
 @transaction.atomic
