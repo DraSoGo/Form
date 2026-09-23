@@ -36,7 +36,10 @@ def route(task,context,prompt='',image=None,job=None):
         try:
             provider=config.get(candidate.provider)
             if not provider: raise ProviderError('provider_unavailable')
-            raw=complete(provider,candidate.model,SAFETY+'\nJSON schema:\n'+json.dumps(schema.model_json_schema()),json.dumps({'context':context,'request':prompt},ensure_ascii=False,default=str),image=image)
+            # ASCII-escaped JSON: the gateway chokes on requests whose user
+            # message carries large runs of raw non-ASCII (Thai) and returns
+            # an empty body; \uXXXX escapes are semantically identical.
+            raw=complete(provider,candidate.model,SAFETY+'\nJSON schema:\n'+json.dumps(schema.model_json_schema()),json.dumps({'context':context,'request':prompt},ensure_ascii=True,default=str),image=image)
             result=schema.model_validate_json(raw)
             return result.model_dump(mode='json'),candidate.provider,candidate.model
         except ValidationError:
