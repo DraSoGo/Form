@@ -777,6 +777,19 @@ class CoreFlowTests(TestCase):
         today = timezone.localdate().isoformat()
         self.assertFalse(any(d['level'] for w in activity['weeks'] for d in w if d['iso'] == today))
 
+    def test_training_activity_counts_completed_cardio(self):
+        # A cardio-only session is still a training day.
+        from core.services import training_activity
+        from core.models import WorkoutCardio
+        session = WorkoutSession.objects.create(user=self.user, name='Cardio day')
+        cardio_ex = Exercise.objects.create(user=self.user, name='Rowing', activity_type='cardio')
+        WorkoutCardio.objects.create(session=session, exercise=cardio_ex, minutes=25, completed=True)
+        activity = training_activity(self.user)
+        self.assertEqual(activity['streak'], 1)
+        today = timezone.localdate().isoformat()
+        today_cell = [d for w in activity['weeks'] for d in w if d['iso'] == today]
+        self.assertEqual(today_cell[0]['level'], 1)
+
     # ── Personal records ────────────────────────────────────────────────
 
     def test_personal_records_epley_best_and_top_sets(self):

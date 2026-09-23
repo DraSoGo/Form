@@ -185,7 +185,7 @@ def training_activity(user, days=371):
     (a session started but abandoned mid-way does not count).
     """
     since = timezone.now() - timedelta(days=days)
-    rows = (
+    rows = list(
         WorkoutSet.objects.filter(
             session__user=user,
             session__started_at__gte=since,
@@ -196,16 +196,31 @@ def training_activity(user, days=371):
         .values("day")
         .annotate(sets=Count("id"))
     )
-    dates = {row["day"].isoformat(): row["sets"] for row in rows}
+    # Completed cardio entries count as training days too (a cardio-only
+    # session was still a training day — the heatmap previously missed it).
+    rows += list(
+        WorkoutCardio.objects.filter(
+            session__user=user,
+            session__started_at__gte=since,
+            completed=True,
+        )
+        .annotate(day=db_functions.TruncDate("session__started_at"))
+        .values("day")
+        .annotate(sets=Count("id"))
+    )
+    dates = {}
+    for row in rows:
+        key = row["day"].isoformat()
+        dates[key] = dates.get(key, 0) + row["sets"]
 
     def level(sets):
         if not sets:
             return 0
         if sets <= 3:
             return 1
-        if sets <= 8:
+        if sets <= 9:
             return 2
-        if sets <= 15:
+        if sets <= 16:
             return 3
         return 4
 
