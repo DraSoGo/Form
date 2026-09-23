@@ -234,6 +234,23 @@ class CoachingTests(TestCase):
         entry.refresh_from_db()
         return entry
 
+    def test_unknown_ref_key_demotes_to_unmatched(self):
+        # A model inventing a plausible ref_key absent from the table must
+        # not waste the whole response: the item becomes unmatched instead.
+        entry = FoodEntry.objects.create(user=self.user, name='Photo', note='บะหมี่ผัด')
+        result = self._food_v3([
+            {'ref_key': 'cooked_noodles', 'name_th': 'บะหมี่ผัดสุก', 'weight_g': 180, 'min_g': 140, 'max_g': 230, 'user_confirmed': False},
+            {'ref_key': 'chicken_breast_cooked', 'name_th': 'ไก่ปรุงสุก', 'weight_g': 90, 'min_g': 70, 'max_g': 110, 'user_confirmed': False},
+        ])
+        entry = self._run_food_job(entry, result)
+        self.assertEqual(entry.state, 'ai_estimated')
+        ref_keys = [i['ref_key'] for i in entry.ai_breakdown['items']]
+        self.assertNotIn('cooked_noodles', ref_keys)
+        self.assertIn('chicken_breast_cooked', ref_keys)
+        names = [u['name_th'] for u in entry.ai_breakdown['unmatched']]
+        self.assertIn('บะหมี่ผัดสุก', names)
+        self.assertGreater(float(entry.calories), 0)
+
     def test_fried_chicken_sticky_rice_breakdown(self):
         entry = FoodEntry.objects.create(user=self.user, name='Photo', note='ข้าวเหนียวไก่ทอด')
         result = self._food_v3([

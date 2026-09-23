@@ -80,6 +80,17 @@ def _food_prompt(note):
 def _resolve_estimate(result):
     """Convert a V3 route result into computed meal data and validation flags."""
     estimate = NutritionEstimateV3.model_validate(result)
+    from core.nutrition_ref import REFERENCE
+    # The AI sometimes invents plausible ref_keys absent from the curated
+    # table (e.g. cooked_noodles vs egg_noodles). Dropping the whole
+    # response over one key wasted every other correct item; instead the
+    # item becomes unmatched and the user fixes it in the breakdown UI.
+    kept, demoted = [], []
+    for item in estimate.items:
+        if item.ref_key in REFERENCE:
+            kept.append(item)
+        else:
+            demoted.append(item)
     items = [
         {
             "ref_key": item.ref_key,
@@ -90,12 +101,20 @@ def _resolve_estimate(result):
             "fraction_consumed": item.fraction_consumed,
             "user_confirmed": item.user_confirmed,
         }
-        for item in estimate.items
+        for item in kept
     ]
     unmatched = [
         {"name_th": u.name_th, "estimated_share": u.estimated_share, "note": u.note}
         for u in estimate.unmatched
     ]
+    for item in demoted:
+        unmatched.append({
+            "name_th": item.name_th or item.ref_key,
+            "estimated_share": "major" if item.weight_g >= 40 else "minor",
+            "note": f"ไม่มีในตารางอ้างอิง (ref_key: {item.ref_key}) — เพิ่มเป็นส่วนประกอบเองได้",
+        })
+    if not items and demoted:
+        raise ProviderError('food_review_needed', False)
     computed = compute_meal(
         items,
         dish_name=estimate.dish_name_th,
