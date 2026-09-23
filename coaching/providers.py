@@ -54,6 +54,10 @@ def request(provider,path,payload=None):
 
 def complete(provider,model,system,prompt,image=None,max_tokens=2200):
     data_url = 'data:'+image[0]+';base64,'+base64.b64encode(image[1]).decode() if image else None
+    # Gateway faults observed 2026-09-23: long "thinking" responses (>60s)
+    # come back with usage but no content. Low reasoning effort keeps food
+    # vision answers well inside that window. Env-overridable per pool.
+    reasoning_effort=os.environ.get('AI_REASONING_EFFORT','low')
     if provider.protocol == 'messages':
         content = [{'type':'text','text':prompt}]
         if image: content.append({'type':'image','source':{'type':'base64','media_type':image[0],'data':base64.b64encode(image[1]).decode()}})
@@ -74,7 +78,8 @@ def complete(provider,model,system,prompt,image=None,max_tokens=2200):
         return text
     content = [{'type':'text','text':prompt}]
     if image: content.append({'type':'image_url','image_url':{'url':data_url}})
-    data = request(provider,'/chat/completions',dict(model=model,messages=[{'role':'system','content':system},{'role':'user','content':content}],max_tokens=max_tokens,stream=False))
+    extra={'reasoning_effort':reasoning_effort} if reasoning_effort else {}
+    data = request(provider,'/chat/completions',dict(model=model,messages=[{'role':'system','content':system},{'role':'user','content':content}],max_tokens=max_tokens,stream=False,**extra))
     try:
         result=data['choices'][0]['message']['content']
         if not isinstance(result,str): raise TypeError()
