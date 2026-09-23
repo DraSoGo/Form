@@ -33,5 +33,6 @@ urlpatterns = [
     path("add/<str:kind>/", views.generic_edit),
     path("edit/<str:kind>/<uuid:pk>/", views.generic_edit),
     path("export/<str:domain>/", views.export_view),
+    path("report/<int:year>/<int:month>/", views.monthly_report),
     path("import/", views.import_view),
 ]

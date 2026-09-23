@@ -90,6 +90,17 @@ class CoachingTests(TestCase):
         self.candidates('food')
         with self.assertRaises(ProviderError): route('food',{},image=('image/png',b'test'))
         mock.assert_not_called()
+    @patch('coaching.router.complete')
+    def test_food_note_only_runs_text_models_without_image(self,mock):
+        # F6: no photo — note-only food jobs may use text-verified models.
+        candidate=ProviderModel.objects.create(provider='gpt',model='text-only-test',text_verified=True)
+        TaskRoute.objects.create(task='food',candidate=candidate,priority=0)
+        mock.return_value=json.dumps(FOOD)
+        result,provider,model=route('food',{},image=None)
+        self.assertEqual(provider,'gpt')
+        # The image part of the call must be None.
+        self.assertIsNone(mock.call_args.kwargs.get('image'))
+        self.assertEqual(result['dish_name_th'],FOOD['dish_name_th'])
     def test_context_is_bounded_same_source_and_sleep(self):
         for i in range(25): FoodEntry.objects.create(user=self.user,name='food',calories=100,protein=5)
         BodyMeasurement.objects.create(user=self.user,weight=70,source='manual')
@@ -613,3 +624,49 @@ class CompatibilityTests(TestCase):
             client.return_value.__enter__.return_value.request.return_value=httpx.Response(400,json={'error':{'code':code,'message':'sensitive never logged'}})
             with self.assertRaises(ProviderError) as caught: request(p,'/models')
             self.assertEqual(caught.exception.code,expected);self.assertEqual(caught.exception.failover,retryable)
+
+class FoodReestimateTests(TestCase):
+    """F2: Re-estimate with AI — user-confirmed weights ride along, and the
+    result may overwrite a confirmed entry (explicit user request)."""
+    password='test-owner-long-password'
+    def setUp(self):
+        self.user=get_user_model().objects.create_user('owner2',password=self.password)
+        self.client.force_login(self.user)
+        Profile.objects.create(user=self.user,summary_time=time(21))
+    @patch('coaching.services.route')
+    def test_reestimate_prompt_carries_confirmed_weights(self,mock):
+        from coaching.services import enqueue_food,claim_job,run_job
+        entry=FoodEntry.objects.create(
+            user=self.user,name='Rice bowl',state='user_corrected',
+            ai_breakdown={'schema':2,'items':[
+                {'name_th':'ข้าวสวย','ref_key':'cooked_white_rice','weight_g':180,'user_confirmed':True},
+                {'name_th':'หมูทอด','ref_key':'custom','weight_g':100,'user_confirmed':False},
+            ],'unmatched':[]},
+        )
+        mock.return_value=(FOOD,'claude','vision-test')
+        enqueue_food(self.user,entry,reestimate=True)
+        job=claim_job()
+        self.assertTrue(job.payload.get('reestimate'))
+        run_job(job)
+        prompt=mock.call_args.args[2]
+        self.assertIn('CONFIRMED these components',prompt)
+        self.assertIn('ข้าวสวย: 180g',prompt)
+        # Overwrites the corrected entry (explicit request), state stays ai_estimated.
+        entry.refresh_from_db()
+        self.assertEqual(entry.state,'ai_estimated')
+    @patch('coaching.services.route')
+    def test_note_only_food_job_runs_without_photo(self,mock):
+        # F6: a photo-less entry with a Thai note is analyzable.
+        from coaching.services import enqueue_food,claim_job,run_job
+        entry=FoodEntry.objects.create(user=self.user,name='Note meal',note='ข้าว 1 จาน หมูทอด 100g ไข่ต้ม 2 ฟอง')
+        mock.return_value=(FOOD,'gpt','text-test')
+        enqueue_food(self.user,entry,reestimate=True)
+        job=claim_job();run_job(job);entry.refresh_from_db()
+        self.assertEqual(entry.state,'ai_estimated')
+        # No image was attached to the AI call.
+        self.assertIsNone(mock.call_args.kwargs.get('image'))
+    def test_enqueue_food_still_requires_photo_for_plain_analysis(self):
+        from coaching.services import enqueue_food
+        entry=FoodEntry.objects.create(user=self.user,name='No photo')
+        with self.assertRaises(ValidationError):
+            enqueue_food(self.user,entry)

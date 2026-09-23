@@ -9,7 +9,16 @@
   <img class="food-photo" src="/photos/{{ entry.pk }}/" alt="Your food photograph">
   <div class="actions">
     <form method="post" action="/coach/food/{{ entry.pk }}/">{% csrf_token %}<button>Analyze photo</button></form>
+    <form method="post" action="/coach/food/{{ entry.pk }}/">{% csrf_token %}<input type="hidden" name="reestimate" value="1"><button class="secondary">Re-estimate with AI</button></form>
     <form method="post" action="/photos/{{ entry.pk }}/delete/">{% csrf_token %}<button class="secondary">Delete photo, keep entry</button></form>
+  </div>
+  {% if entry.uncertainty %}<p class="muted">{{ entry.uncertainty }}</p>{% endif %}
+</section>
+{% elif entry %}
+<section class="card">
+  <div class="actions">
+    {# Note-only analysis: no photo needed — the AI parses the note text. #}
+    <form method="post" action="/coach/food/{{ entry.pk }}/">{% csrf_token %}<input type="hidden" name="reestimate" value="1"><button>Estimate from note with AI</button></form>
   </div>
   {% if entry.uncertainty %}<p class="muted">{{ entry.uncertainty }}</p>{% endif %}
 </section>

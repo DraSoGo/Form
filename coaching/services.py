@@ -40,9 +40,21 @@ def food_snapshot(entry):
     values={k:str(Decimal(str(getattr(entry,k))).normalize()) if k in nutrients and getattr(entry,k) is not None else str(getattr(entry,k)) for k in fields}
     return hashlib.sha256(json.dumps(values,sort_keys=True).encode()).hexdigest()
 
-def enqueue_food(user,entry):
-    if not entry.image: raise ValidationError('This entry has no retained photograph.')
-    return enqueue(user,'food',{'entry':str(entry.pk),'snapshot':food_snapshot(entry)})
+def enqueue_food(user,entry,reestimate=False):
+    if not entry.image and not reestimate: raise ValidationError('This entry has no retained photograph.')
+    payload={'entry':str(entry.pk),'snapshot':food_snapshot(entry)}
+    if reestimate:
+        # User-confirmed components ride along: the AI must keep them fixed
+        # and only estimate the remaining unmatched parts.
+        payload['reestimate']={
+            'confirmed':[
+                {'name_th':i.get('name_th',''),'ref_key':i.get('ref_key'),
+                 'weight_g':i.get('weight_g'),'user_confirmed':bool(i.get('user_confirmed'))}
+                for i in (entry.ai_breakdown or {}).get('items',[])
+            ],
+            'unmatched':(entry.ai_breakdown or {}).get('unmatched',[]),
+        }
+    return enqueue(user,'food',payload)
 
 def exercise_snapshot(exercise):
     fields=('name','activity_type','equipment','aliases','primary_muscles','secondary_muscles','classification')
@@ -179,15 +191,27 @@ def run_job(job):
         if job.task=='body': prompt=json.dumps(job.payload.get('triggers',[]))
         if job.task=='food':
             entry=m.FoodEntry.objects.get(pk=job.payload['entry'],user=job.user)
-            if not entry.image: raise ProviderError('image_expired',False)
-            from PIL import Image
-            from io import BytesIO
-            from django.conf import settings
-            from pathlib import Path
-            with (Path(settings.MEDIA_ROOT)/Path(entry.image).name).open('rb') as photo:
-                im=Image.open(photo);im.thumbnail((1600,1600));buf=BytesIO();im.convert('RGB').save(buf,format='JPEG',quality=85)
-                image=('image/jpeg',buf.getvalue())
-            prompt=_food_prompt(entry.note[:2000])
+            reestimate=job.payload.get('reestimate')
+            if not entry.image and not reestimate: raise ProviderError('image_expired',False)
+            if entry.image:
+                from PIL import Image
+                from io import BytesIO
+                from django.conf import settings
+                from pathlib import Path
+                with (Path(settings.MEDIA_ROOT)/Path(entry.image).name).open('rb') as photo:
+                    im=Image.open(photo);im.thumbnail((1600,1600));buf=BytesIO();im.convert('RGB').save(buf,format='JPEG',quality=85)
+                    image=('image/jpeg',buf.getvalue())
+            if reestimate:
+                confirmed=reestimate.get('confirmed') or []
+                lines=[f"- {c['name_th'] or c.get('ref_key')}: {c.get('weight_g')}g" for c in confirmed if c.get('weight_g')]
+                prompt=(
+                    _food_prompt(entry.note[:2000])
+                    + "\n\nThe user has CONFIRMED these components at these exact weights — keep each one with user_confirmed=true and its exact weight:\n"
+                    + ("\n".join(lines) or "(none yet)")
+                    + "\nEstimate ONLY the remaining components. Never change confirmed weights. If a confirmed component has no reference key, keep it in items with ref_key 'custom' and leave nutrient values unset."
+                )
+            else:
+                prompt=_food_prompt(entry.note[:2000])
             context=build_context(job.user,'food',day,query=entry.name+' '+entry.note)
         if job.task=='exercise':
             exercise=m.Exercise.objects.get(pk=job.payload['exercise'],user=job.user)
@@ -227,7 +251,10 @@ def run_job(job):
                 complete = food_computed['complete']
 
                 # Only overwrite entry nutrient fields when the user has not manually corrected/confirmed them.
-                if entry.state in ('manual', 'ai_estimated'):
+                # Re-estimate jobs are an explicit user request for fresh
+                # numbers, so they overwrite even confirmed/corrected
+                # entries; plain analyses still respect manual corrections.
+                if entry.state in ('manual', 'ai_estimated') or reestimate:
                     from decimal import Decimal
                     for src, dst in [('kcal','calories'),('protein','protein'),('carbs','carbs'),('fat','fat'),('fiber','fiber'),('sugar','sugar'),('sodium','sodium')]:
                         value = totals.get(src)

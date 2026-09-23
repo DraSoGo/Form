@@ -18,6 +18,14 @@
      href="?days=0" aria-current="{% if days == 0 %}page{% else %}false{% endif %}">All</a>
 </div>
 
+{% now "Y" as current_year %}{% now "n" as current_month %}
+<div class="actions" style="margin-top:10px">
+  <a class="button secondary" href="/report/{{ current_year }}/{{ current_month }}/?format=pdf"
+     download>Download this month's report (PDF)</a>
+  <a class="subtle-link" href="/report/{{ current_year }}/{{ current_month }}/?format=csv"
+     download>This month (CSV)</a>
+</div>
+
 {# ── Summary cards (4 metrics, 2x2 mobile, 4-col desktop) ─────────── #}
 {% if summaries %}
   <div class="summary-grid">

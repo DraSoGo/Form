@@ -48,7 +48,10 @@ def decision(request,pk):
 @require_POST
 def food(request,pk):
     entry=get_object_or_404(FoodEntry,pk=pk,user=request.user)
-    try: enqueue_food(request.user,entry);messages.success(request,'Food analysis queued. Estimates remain editable in Nutrition.')
+    reestimate=request.POST.get('reestimate')=='1'
+    try:
+        enqueue_food(request.user,entry,reestimate=reestimate)
+        messages.success(request,'Food analysis queued. Estimates remain editable in Nutrition.')
     except ValidationError as exc: messages.error(request,' '.join(exc.messages))
     return redirect('coaching:home')
 @login_required

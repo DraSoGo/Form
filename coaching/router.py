@@ -16,8 +16,10 @@ def route(task,context,prompt='',image=None,job=None):
     schema = SCHEMAS[task]
     candidates = list(TaskRoute.objects.filter(task=task,candidate__available=True,candidate__text_verified=True).select_related('candidate'))
     if task=='food':
-        if not image: raise ProviderError('image_required',False)
-        candidates=[routing for routing in candidates if routing.candidate.vision_verified]
+        # Vision is only required when an image is actually being sent;
+        # note-only food jobs run text-only against any text-verified model.
+        if image:
+            candidates=[routing for routing in candidates if routing.candidate.vision_verified]
     if not candidates: raise ProviderError('no_verified_model_configured',False)
     config=providers()
     error='no_verified_model_configured'
