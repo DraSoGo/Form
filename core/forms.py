@@ -32,7 +32,8 @@ class AdvancedBodyForm(BodyForm):
 
     class Meta(BodyForm.Meta):
         fields = BodyForm.Meta.fields + [
-            "body_fat", "muscle", "visceral_fat", "body_age", "bmr", "bmi"
+            "body_fat", "muscle", "visceral_fat", "body_age", "bmr", "bmi",
+            "waist", "arm", "thigh",
         ]
 
 

@@ -29,7 +29,28 @@
       </svg>
     </summary>
     <div class="pr-history">
+      {% if r.chart %}
+      {% with first=r.progress|first last=r.progress|last %}
+      <svg class="chart pr-chart" viewBox="0 0 400 110" role="img"
+           aria-label="Estimated 1RM progress for {{ r.exercise.name }}">
+        <polyline fill="none" stroke="currentColor" stroke-width="3" points="{{ r.chart }}" />
+      </svg>
+      <p class="chart-labels muted">{{ first.date }} → {{ last.date }} · e1RM {{ first.e1rm|floatformat:1 }} → {{ last.e1rm|floatformat:1 }} kg</p>
+      {% endwith %}
+      {% endif %}
       <p class="pr-history-title muted">Recent best attempts</p>
+      {% if r.effort %}
+      <div class="pr-effort" role="img" aria-label="Recent effort: RPE and RIR per session">
+        <span class="pr-effort-label muted">Effort</span>
+        {% for e in r.effort %}
+        <span class="effort-dot {% if e.rpe is None and e.rir is None %}none{% elif e.rpe and e.rpe >= 9 or e.rir is not None and e.rir <= 1 %}hard{% elif e.rpe and e.rpe >= 7.5 or e.rir is not None and e.rir <= 3 %}medium{% else %}light{% endif %}"
+              title="{{ e.date }} · {% if e.rpe is not None %}RPE {{ e.rpe|floatformat:1 }}{% endif %}{% if e.rpe is not None and e.rir is not None %} · {% endif %}{% if e.rir is not None %}RIR {{ e.rir|floatformat:1 }}{% endif %}">
+          {% if e.rpe is not None %}{{ e.rpe|floatformat:"1g" }}{% else %}·{% endif %}
+        </span>
+        {% endfor %}
+      </div>
+      <p class="muted pr-effort-hint">Latest sessions, hardest on the right scale: number = RPE (10 = maximal).</p>
+      {% endif %}
       <div class="table-wrap">
         <table>
           <tr><th>Weight</th><th>Reps</th><th>Est. 1RM</th><th>Date</th></tr>

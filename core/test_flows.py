@@ -830,3 +830,103 @@ class CoreFlowTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, 'Personal records')
         self.assertContains(response, self.exercise.name)
+
+    def test_personal_records_progress_chart_points(self):
+        from core.services import personal_records
+        from datetime import timedelta as _td
+        session1 = WorkoutSession.objects.create(user=self.user, name='S1', started_at=timezone.now() - _td(days=14))
+        session2 = WorkoutSession.objects.create(user=self.user, name='S2', started_at=timezone.now() - _td(days=7))
+        WorkoutSet.objects.create(session=session1, exercise=self.exercise, weight=80, reps=5, set_type='working', completed=True)
+        WorkoutSet.objects.create(session=session2, exercise=self.exercise, weight=90, reps=5, set_type='working', completed=True)
+        records = personal_records(self.user)
+        r = records[0]
+        self.assertEqual(len(r['progress']), 2)
+        self.assertIn(',', r['chart'])
+        pts = r['chart'].split(' ')
+        self.assertEqual(len(pts), 2)
+        # Later heavier point must sit higher (smaller y) on the chart.
+        self.assertLess(int(pts[1].split(',')[1]), int(pts[0].split(',')[1]))
+
+    def test_prs_effort_strip_data(self):
+        from core.services import personal_records
+        session = WorkoutSession.objects.create(user=self.user, name='S')
+        WorkoutSet.objects.create(session=session, exercise=self.exercise, weight=100, reps=5, set_type='working', completed=True, rpe=8.5, rir=2)
+        records = personal_records(self.user)
+        self.assertEqual(len(records[0]['effort']), 1)
+        self.assertEqual(records[0]['effort'][0]['rpe'], 8.5)
+        self.assertEqual(records[0]['effort'][0]['rir'], 2.0)
+
+    def test_streak_freeze_on_planned_rest_days(self):
+        # Fixed plan resting on Sundays: a Sunday gap must not break the streak.
+        from core.services import training_activity
+        from core.models import WorkoutPlan
+        from datetime import datetime as _dt
+        today = timezone.localdate()
+        # Most recent Sunday, and the days around it that WERE trained.
+        sunday = today - timedelta(days=(today.weekday() + 1) % 7 or 7)
+        saturday = sunday - timedelta(days=1)
+        monday_after = sunday + timedelta(days=1)
+        WorkoutPlan.objects.create(
+            user=self.user, name='P', version=1, schedule_type='fixed',
+            schedule={str(i): 'Train' for i in range(6)} | {'6': 'Rest'},
+            exercises=[],
+        )
+        trained_days = [saturday, monday_after]
+        # Also train every day from monday_after up to yesterday so the
+        # streak is unbroken from saturday to now.
+        d = monday_after
+        while d < today:
+            trained_days.append(d)
+            d += timedelta(days=1)
+        for day in trained_days:
+            at = timezone.make_aware(_dt(day.year, day.month, day.day, 12, 0))
+            s = WorkoutSession.objects.create(user=self.user, name='S', started_at=at)
+            WorkoutSet.objects.create(session=s, exercise=self.exercise, weight=60, reps=8, set_type='working', completed=True)
+        activity = training_activity(self.user)
+        # Saturday trained, Sunday frozen, then every day after → streak
+        # counts the trained days.
+        expected = len(set(trained_days))
+        self.assertEqual(activity['streak'], expected)
+        sunday_cell = [d for w in activity['weeks'] for d in w if d['iso'] == sunday.isoformat()]
+        self.assertEqual(sunday_cell[0]['level'], 'rest')
+
+    def test_unplanned_gap_still_breaks_streak(self):
+        from core.services import training_activity
+        from datetime import datetime as _dt
+        today = timezone.localdate()
+        yesterday = today - timedelta(days=1)
+        three_days_ago = today - timedelta(days=3)  # gap at two days ago
+        for day in (yesterday, three_days_ago):
+            at = timezone.make_aware(_dt(day.year, day.month, day.day, 12, 0))
+            s = WorkoutSession.objects.create(user=self.user, name='S', started_at=at)
+            WorkoutSet.objects.create(session=s, exercise=self.exercise, weight=60, reps=8, set_type='working', completed=True)
+        activity = training_activity(self.user)
+        # The unplanned skip two days ago caps the streak at yesterday only.
+        self.assertEqual(activity['streak'], 1)
+
+    def test_body_tape_measurements_saved_and_charted(self):
+        from core.models import BodyMeasurement
+        # Advanced form now includes waist/arm/thigh; verify persistence + trends series.
+        response = self.client.post('/body/', data={
+            'advanced': '1',
+            'recorded_at': timezone.localtime().strftime('%Y-%m-%dT%H:%M'),
+            'source': 'manual', 'weight': '80',
+            'waist': '85.5', 'arm': '36', 'thigh': '58',
+        })
+        self.assertEqual(response.status_code, 302)
+        entry = BodyMeasurement.objects.filter(user=self.user, waist__isnull=False).first()
+        self.assertIsNotNone(entry)
+        self.assertEqual(float(entry.waist), 85.5)
+        self.assertEqual(float(entry.arm), 36.0)
+        self.assertEqual(float(entry.thigh), 58.0)
+        trends = self.client.get('/trends/?days=7')
+        self.assertEqual(trends.status_code, 200)
+        import json as _json
+        import re as _re
+        m = _re.search(r'id="chart-data"[^>]*>(.*?)</script>', trends.content.decode())
+        charts = _json.loads(m.group(1))
+        self.assertTrue(any('Waist' in k for k in charts))
+        self.assertTrue(any('Arm' in k for k in charts))
+        waist_key = next(k for k in charts if 'Waist' in k)
+        self.assertEqual(len(charts[waist_key]), 1)
+        self.assertEqual(charts[waist_key][0]['value'], 85.5)

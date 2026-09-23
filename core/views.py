@@ -1066,11 +1066,11 @@ def trends(request):
     if start is not None:
         body_qs = body_qs.filter(recorded_at__gte=start)
     for entry in body_qs.order_by("recorded_at"):
-        for metric in ["weight", "body_fat", "muscle"]:
+        for metric in ["weight", "body_fat", "muscle", "waist", "arm", "thigh"]:
             value = getattr(entry, metric)
             if value is not None:
                 groups.setdefault(
-                    metric + " · " + entry.get_source_display(), []
+                    metric.replace("_", " ").title() + " · " + entry.get_source_display(), []
                 ).append(
                     {
                         "date": timezone.localtime(entry.recorded_at).strftime("%d %b"),

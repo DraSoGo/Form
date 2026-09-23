@@ -2539,3 +2539,50 @@ main { min-width: 0; }
   .pr-est { grid-area: est; }
   .pr-chevron { grid-area: chev; align-self: start; margin-top: 3px; }
 }
+
+/* PR progress chart inside expanded history */
+.pr-chart {
+  display: block;
+  width: 100%;
+  max-width: 480px;
+  height: auto;
+  margin: 4px 0 2px;
+  color: var(--primary);
+}
+.pr-history .chart-labels { margin: 0 0 10px; font-size: 12px; }
+
+/* RIR/RPE effort strip inside PR history */
+.pr-effort {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin: 2px 0 4px;
+}
+.pr-effort-label { font-size: 11.5px; margin-right: 4px; }
+.effort-dot {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 26px;
+  height: 22px;
+  padding: 0 5px;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink);
+}
+.effort-dot.light  { background: #2e4632; }   /* same greens as heatmap */
+.effort-dot.medium { background: #6d8d54; }
+.effort-dot.hard   { background: #a8663f; }   /* amber-brown: very hard */
+.effort-dot.none   { background: var(--surface-2); color: var(--muted); }
+.pr-effort-hint { margin: 0 0 10px; font-size: 12px; }
+
+/* Planned rest day (fixed schedule): distinct from an empty gap —
+   a subtle outlined square, keeps the "rest is part of the plan" story. */
+.heat.rest {
+  background: transparent;
+  outline: 1px dashed var(--border);
+  outline-offset: -1px;
+}

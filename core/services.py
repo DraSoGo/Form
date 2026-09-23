@@ -177,12 +177,28 @@ def weekly_volume(user):
     return result
 
 
+def _rest_weekdays(user):
+    """Set of weekday numbers (Mon=0) the current fixed plan schedules as
+    Rest. Rotation plans have no fixed rest weekdays (the rest day rotates
+    with completion), so they contribute nothing here."""
+    plan = WorkoutPlan.objects.filter(user=user).first()
+    if not plan or plan.schedule_type != "fixed":
+        return set()
+    return {
+        int(k)
+        for k, v in (plan.schedule or {}).items()
+        if str(v).strip().lower() == "rest"
+    }
+
+
 def training_activity(user, days=371):
     """Day-level training activity for the GitHub-style heatmap and streak.
 
     Returns {'weeks': [[{iso, level, title} × 7] × N], 'streak': int}.
     A day counts as trained when at least one non-warmup set was completed
     (a session started but abandoned mid-way does not count).
+    Planned REST days (fixed schedule) neither break the streak nor render
+    as empty gaps: level 'rest' marks them distinctly.
     """
     since = timezone.now() - timedelta(days=days)
     rows = list(
@@ -213,16 +229,12 @@ def training_activity(user, days=371):
         key = row["day"].isoformat()
         dates[key] = dates.get(key, 0) + row["sets"]
 
-    def level(sets):
-        if not sets:
-            return 0
-        if sets <= 3:
-            return 1
-        if sets <= 9:
-            return 2
-        if sets <= 16:
-            return 3
-        return 4
+    rest_weekdays = _rest_weekdays(user)
+
+    def level(sets, day):
+        if sets:
+            return min(4, 1 if sets <= 3 else 2 if sets <= 9 else 3 if sets <= 16 else 4)
+        return "rest" if day.weekday() in rest_weekdays else 0
 
     today = timezone.localdate()
     # Grid starts 52 weeks back, on the week's Monday, so today ends the
@@ -235,14 +247,12 @@ def training_activity(user, days=371):
         for _ in range(7):
             iso = cursor.isoformat()
             sets = dates.get(iso, 0)
-            week.append(
-                {
-                    "iso": iso,
-                    "level": level(sets),
-                    "title": f"{cursor.strftime('%d %b %Y')}: {sets} sets" if sets
-                    else cursor.strftime("%d %b %Y"),
-                }
+            day_level = level(sets, cursor)
+            title = f"{cursor.strftime('%d %b %Y')}: {sets} sets" if sets else (
+                f"{cursor.strftime('%d %b %Y')}: rest day (planned)"
+                if day_level == "rest" else cursor.strftime("%d %b %Y")
             )
+            week.append({"iso": iso, "level": day_level, "title": title})
             cursor += timedelta(days=1)
             if cursor > today and len(week) < 7:
                 # Pad the final column to keep rows aligned.
@@ -251,12 +261,25 @@ def training_activity(user, days=371):
                 break
         weeks.append(week)
 
+    # Streak: consecutive days that were either trained or a PLANNED rest
+    # day (frozen, not broken). An unplanned skip breaks it. Today does not
+    # break the streak while the day is still in progress.
     streak = 0
     day = today
-    if day.isoformat() not in dates:
-        day -= timedelta(days=1)
-    while day.isoformat() in dates:
-        streak += 1
+    first = True
+    while True:
+        trained = day.isoformat() in dates
+        planned_rest = day.weekday() in rest_weekdays
+        if not trained and not planned_rest:
+            if not first:
+                break
+            # Today not trained yet: start judging from yesterday.
+            first = False
+            day -= timedelta(days=1)
+            continue
+        if trained:
+            streak += 1
+        first = False
         day -= timedelta(days=1)
     return {"weeks": weeks, "streak": streak}
 
@@ -290,6 +313,16 @@ def personal_records(user):
         .select_related("exercise", "session")
         .order_by("session__started_at")
     )
+    # Per-exercise RIR/RPE for the effort strip: last N logged efforts in
+    # chronological order (RPE 10/RIR 0 = hardest).
+    effort_by_exercise = {}
+    for s in sets:
+        if s.rpe is not None or s.rir is not None:
+            effort_by_exercise.setdefault(s.exercise.pk, []).append(
+                {"date": timezone.localdate(s.session.started_at).isoformat(),
+                 "rpe": float(s.rpe) if s.rpe is not None else None,
+                 "rir": float(s.rir) if s.rir is not None else None}
+            )
     by_exercise = {}
     for s in sets:
         e1rm = estimate_1rm(s.weight, s.reps)
@@ -303,6 +336,29 @@ def personal_records(user):
         best = max(entries, key=lambda e: (e["e1rm"], e["set"].weight))
         s = best["set"]
         top = sorted(entries, key=lambda e: (-e["e1rm"], -e["set"].weight))[:5]
+        # Daily best e1RM over time for the progress chart (most recent 20
+        # points; one point per session day keeps the line readable).
+        by_day = {}
+        for e in entries:
+            day = timezone.localdate(e["set"].session.started_at)
+            if day not in by_day or e["e1rm"] > by_day[day]:
+                by_day[day] = e["e1rm"]
+        progress = [
+            {"date": d.isoformat(), "e1rm": v} for d, v in sorted(by_day.items())
+        ][-20:]
+        # Precomputed SVG polyline points (viewBox 400×110) so the template
+        # stays math-free: x spread across 10..390, y from e1RM range.
+        chart = ""
+        if len(progress) > 1:
+            values = [p["e1rm"] for p in progress]
+            lo, hi = min(values), max(values)
+            span = (hi - lo) or 1.0
+            step = 380.0 / (len(progress) - 1)
+            pts = [
+                f"{round(10 + i * step)},{round(100 - (v - lo) / span * 88)}"
+                for i, v in enumerate(values)
+            ]
+            chart = " ".join(pts)
         records.append(
             {
                 "exercise": s.exercise,
@@ -310,6 +366,9 @@ def personal_records(user):
                 "reps": s.reps,
                 "e1rm": best["e1rm"],
                 "date": timezone.localdate(s.session.started_at),
+                "progress": progress,
+                "chart": chart,
+                "effort": effort_by_exercise.get(s.exercise.pk, [])[-8:],
                 "top_sets": [
                     {
                         "weight": float(e["set"].weight),

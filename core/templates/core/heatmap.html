@@ -16,7 +16,7 @@
     <div class="heatmap-grid">
       {% for week in activity.weeks %}
       <div class="heatmap-col">
-        {% for day in week %}<span class="heat lv{{ day.level }}" title="{{ day.title }}"></span>{% endfor %}
+        {% for day in week %}<span class="heat {% if day.level == 'rest' %}rest{% else %}lv{{ day.level }}{% endif %}" title="{{ day.title }}"></span>{% endfor %}
       </div>
       {% endfor %}
     </div>
