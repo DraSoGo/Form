@@ -31,7 +31,7 @@ def providers():
 def request(provider,path,payload=None):
     if not provider.key: raise ProviderError('key_not_configured')
     try:
-        with httpx.Client(timeout=httpx.Timeout(45,connect=8),follow_redirects=False) as client:
+        with httpx.Client(timeout=httpx.Timeout(90,connect=8),follow_redirects=False) as client:
             response = client.request('GET' if payload is None else 'POST',provider.base_url+path,
                 headers={'Authorization':'Bearer '+provider.key,'anthropic-version':'2023-06-01'},json=payload)
     except httpx.HTTPError: raise ProviderError('network_or_timeout') from None
