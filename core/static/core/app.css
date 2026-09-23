@@ -2660,3 +2660,30 @@ details[open] > .pr-row::after { content: none; }
   outline-offset: -1px;
 }
 
+
+/* =========================================================================
+   Trend chart interactive points + tooltip
+   ========================================================================= */
+.chart-point { cursor: pointer; outline: none; }
+.chart-point circle { fill: currentColor; opacity: 0; transition: opacity .12s ease; }
+.chart-point:hover circle,
+.chart-point:focus circle,
+.chart-point.is-active circle { opacity: 1; }
+.chart-point:focus circle { stroke: var(--primary); stroke-width: 2; }
+.chart-tip {
+  position: absolute;
+  padding: 4px 10px;
+  font-size: 12.5px;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  pointer-events: none;
+  opacity: 0;
+  white-space: nowrap;
+  z-index: 3;
+}
+.chart-tip:not(:empty) { opacity: 1; }
+/* Cards containing charts need relative positioning for the tooltip. */
+#charts .card { position: relative; }

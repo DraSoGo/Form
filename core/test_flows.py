@@ -332,8 +332,13 @@ class CoreFlowTests(TestCase):
                                          (current, True, 'warmup'), (current, False, 'working'),
                                          (old, True, 'working')]:
             WorkoutSet.objects.create(session=session, exercise=self.exercise, completed=completed, set_type=kind)
-        self.assertEqual(weekly_volume(self.user), {'Chest': {'direct': 2, 'indirect': 0},
-                                                   'Triceps': {'direct': 0, 'indirect': 2}})
+        # weekly_volume now returns the full canonical muscle map (zeros
+        # included); assert the exercised muscles and spot-check a zero.
+        volume = weekly_volume(self.user)
+        self.assertEqual(volume['Chest'], {'direct': 2, 'indirect': 0})
+        self.assertEqual(volume['Triceps'], {'direct': 0, 'indirect': 2})
+        self.assertEqual(volume['Back'], {'direct': 0, 'indirect': 0})
+        self.assertNotIn('Old', [k for k, v in volume.items() if v['direct'] or v['indirect']])
 
     def test_body_create_and_edit_preserve_other_history(self):
         old = BodyMeasurement.objects.create(user=self.user, weight=83, source='smart_scale')
@@ -931,3 +936,33 @@ class CoreFlowTests(TestCase):
         self.assertEqual(len(charts[waist_key]), 1)
         self.assertEqual(charts[waist_key][0]['value'], 85.5)
 
+
+    def test_training_activity_counts_after_midnight_local(self):
+        # Regression: TruncDate defaulted to UTC, so a session logged at
+        # 00:30 Bangkok (= 17:30 UTC the previous day) landed on the wrong
+        # heatmap day. It must count as its LOCAL date.
+        from core.services import training_activity
+        from datetime import datetime as _dt
+        now = timezone.localtime()
+        # Yesterday 00:30 local — inside the grid, before-7am edge case.
+        yday = (now - timedelta(days=1)).replace(hour=0, minute=30, second=0, microsecond=0)
+        s = WorkoutSession.objects.create(user=self.user, name='Late', started_at=yday)
+        WorkoutSet.objects.create(session=s, exercise=self.exercise, weight=60, reps=8,
+                                  set_type='working', completed=True)
+        activity = training_activity(self.user, days=7)
+        iso = yday.date().isoformat()
+        cell = [d for w in activity['weeks'] for d in w if d['iso'] == iso]
+        self.assertTrue(cell and cell[0]['level'] in (1, 2, 3, 4),
+                        f"session on {iso} should light up (got {cell})")
+
+    def test_diary_shows_latest_job_status(self):
+        from coaching.models import Job
+        entry = FoodEntry.objects.create(user=self.user, name='Job meal', calories=0,
+                                         protein=0, carbs=0, fat=0, fiber=0)
+        Job.objects.create(user=self.user, task='food', status='failed',
+                           payload={'entry': str(entry.pk)}, dedupe='d1')
+        response = self.client.get('/nutrition/')
+        html = response.content.decode()
+        self.assertIn('AI failed', html)
+        self.assertIn('Retry analysis', html)
+        self.assertIn(f'/coach/retry/', html)

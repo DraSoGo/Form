@@ -201,6 +201,20 @@
 
                 {% if f.uncertainty %}<p class="uncertainty">{{ f.uncertainty }}</p>{% endif %}
 
+                {% if f.job %}
+                  {% if f.job.status == "pending" or f.job.status == "running" %}
+                    <p class="muted job-status" role="status">AI analysis in progress…</p>
+                  {% elif f.job.status == "failed" %}
+                    <p class="job-status" role="status">
+                      <span class="chip failed">AI failed</span>
+                      <form method="post" action="/coach/retry/{{ f.job.pk }}/" style="display:inline;margin:0">
+                        {% csrf_token %}
+                        <button class="secondary" type="submit">Retry analysis</button>
+                      </form>
+                    </p>
+                  {% endif %}
+                {% endif %}
+
                 {% if f.image %}
                   <p style="margin:0">
                     <a class="photo-link" href="/nutrition/{{ f.pk }}/">View photo and analysis</a>
@@ -211,12 +225,16 @@
 
                 <div class="actions-row">
                   <a class="button secondary" href="/nutrition/{{ f.pk }}/">Edit</a>
-                  {# Quick AI estimate without opening the edit page. #}
+                  {# Quick AI estimate only where it adds something: manual /
+                     not-yet-analyzed entries (analyzed ones use Re-estimate
+                     on the edit page). #}
+                  {% if f.state == "manual" or not f.ai_breakdown %}
                   <form method="post" action="/coach/food/{{ f.pk }}/" style="margin:0">
                     {% csrf_token %}
                     <input type="hidden" name="reestimate" value="1">
                     <button class="secondary" type="submit">Estimate with AI</button>
                   </form>
+                  {% endif %}
                   <form method="post" action="/delete/food/{{ f.pk }}/" style="margin:0">
                     {% csrf_token %}
                     <button class="secondary" type="submit"

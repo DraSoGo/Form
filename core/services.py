@@ -159,23 +159,16 @@ def nutrition_totals(user, start, end):
 
 
 def weekly_volume(user):
-    result = {}
-    for item in (
-        WorkoutSet.objects.filter(
-            session__user=user,
-            session__started_at__gte=timezone.now() - timedelta(days=7),
-            completed=True,
-        )
-        .exclude(set_type="warmup")
-        .select_related("exercise")
-    ):
-        for field, label in [
-            ("primary_muscles", "direct"),
-            ("secondary_muscles", "indirect"),
-        ]:
-            for muscle in getattr(item.exercise, field):
-                result.setdefault(muscle, {"direct": 0, "indirect": 0})[label] += 1
-    return result
+    """Direct/indirect completed sets per muscle over the last 7 days.
+
+    Reuses muscle_summaries so muscle names are normalized the same way
+    everywhere (the old local loop double-counted differently-spelled
+    muscle names and re-implemented the same query). Keys keep the
+    display-style Title case the volume table has always used.
+    """
+    from .muscles import muscle_summaries
+    summaries = muscle_summaries(user, days=7)
+    return {m.title(): v for m, v in summaries.items()}
 
 
 def _rest_weekdays(user):
@@ -202,6 +195,10 @@ def training_activity(user, days=371):
     as empty gaps: level 'rest' marks them distinctly.
     """
     since = timezone.now() - timedelta(days=days)
+    # TruncDate defaults to the DB session timezone (UTC on this server);
+    # pass the app timezone so a 00:00–06:59 Bangkok session lands on the
+    # correct local day in the heatmap/streak.
+    local_tz = timezone.get_current_timezone()
     rows = list(
         WorkoutSet.objects.filter(
             session__user=user,
@@ -209,7 +206,7 @@ def training_activity(user, days=371):
             completed=True,
         )
         .exclude(set_type="warmup")
-        .annotate(day=db_functions.TruncDate("session__started_at"))
+        .annotate(day=db_functions.TruncDate("session__started_at", tz=local_tz))
         .values("day")
         .annotate(sets=Count("id"))
     )
@@ -221,7 +218,7 @@ def training_activity(user, days=371):
             session__started_at__gte=since,
             completed=True,
         )
-        .annotate(day=db_functions.TruncDate("session__started_at"))
+        .annotate(day=db_functions.TruncDate("session__started_at", tz=local_tz))
         .values("day")
         .annotate(sets=Count("id"))
     )

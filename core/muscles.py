@@ -216,6 +216,13 @@ def _level(sets):
     return 3
 
 
+def volume_by_muscle(user, days=7):
+    """Count completed, non-warmup sets per muscle over the last N days."""
+    counts = _set_counts(user, days)
+    # ponytail: thresholds are a simple heuristic, tune from real training data if needed
+    return {muscle: {"sets": count, "level": _level(count)} for muscle, count in counts.items()}
+
+
 def _intensity(sets):
     if sets == 0:
         return 0
@@ -260,13 +267,6 @@ def _set_counts(user, days=7, on_date=None):
                 if key in counts:
                     counts[key] += 1
     return counts
-
-
-def volume_by_muscle(user, days=7):
-    """Count completed, non-warmup sets per muscle over the last N days."""
-    counts = _set_counts(user, days)
-    # ponytail: thresholds are a simple heuristic, tune from real training data if needed
-    return {muscle: {"sets": count, "level": _level(count)} for muscle, count in counts.items()}
 
 
 def region_states(user, days=7, on_date=None):

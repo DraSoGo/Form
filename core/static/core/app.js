@@ -6,7 +6,62 @@ let deadline=0; const output=document.querySelector('#timer');
 function timer(seconds){deadline=seconds?Date.now()+seconds*1000:0;updateTimer()}
 function updateTimer(){if(!output)return;if(!deadline){output.textContent='Ready';return}const left=Math.max(0,Math.ceil((deadline-Date.now())/1000));output.textContent=Math.floor(left/60)+':'+String(left%60).padStart(2,'0');if(!left){deadline=0;output.textContent='Rest complete';if(navigator.vibrate)navigator.vibrate([200,100,200]);try{const c=new(window.AudioContext||window.webkitAudioContext)();const o=c.createOscillator();o.connect(c.destination);o.start();o.stop(c.currentTime+.25)}catch{}}}
 document.querySelectorAll('[data-timer]').forEach(b=>b.addEventListener('click',()=>timer(Number(b.dataset.timer))));if(output){setInterval(updateTimer,250);const rest=Number(new URLSearchParams(location.search).get('rest'));if(rest>0&&rest<=3600)timer(rest)}
-const chartData=document.querySelector('#chart-data');if(chartData){const charts=JSON.parse(chartData.textContent);const holder=document.querySelector('#charts');Object.entries(charts).forEach(([name,points])=>{const card=document.createElement('section');card.className='card';const h=document.createElement('h2');h.textContent=name;card.append(h);if(!points.length){const p=document.createElement('p');p.textContent='No data in this period.';card.append(p)}else{const vals=points.map(p=>p.value),lo=Math.min(...vals),hi=Math.max(...vals),spread=hi-lo||1;const svg=document.createElementNS('http://www.w3.org/2000/svg','svg');svg.setAttribute('viewBox','0 0 400 140');svg.setAttribute('role','img');svg.setAttribute('aria-label',name+'; range '+lo+' to '+hi);svg.classList.add('chart');const line=document.createElementNS(svg.namespaceURI,'polyline');line.setAttribute('points',points.map((p,i)=>(10+i*380/Math.max(1,points.length-1))+','+(125-(p.value-lo)/spread*110)).join(' '));line.setAttribute('fill','none');line.setAttribute('stroke','currentColor');line.setAttribute('stroke-width','3');svg.append(line);card.append(svg);const p=document.createElement('p');p.className='chart-labels';p.textContent=points[0].date+' → '+points.at(-1).date+' · '+lo.toFixed(1)+'–'+hi.toFixed(1);card.append(p);const details=document.createElement('details');const summary=document.createElement('summary');summary.textContent='View values';details.append(summary);points.forEach(point=>{const value=document.createElement('p');value.textContent=point.date+': '+point.value.toFixed(1);details.append(value)});card.append(details)}holder.append(card)})}
+// =========================================================================
+// Trend charts (SVG polylines with hoverable data points)
+// =========================================================================
+const chartData=document.querySelector('#chart-data');
+if(chartData){const charts=JSON.parse(chartData.textContent);const holder=document.querySelector('#charts');
+Object.entries(charts).forEach(([name,points])=>{
+  const card=document.createElement('section');card.className='card';
+  const h=document.createElement('h2');h.textContent=name;card.append(h);
+  if(!points.length){const p=document.createElement('p');p.textContent='No data in this period.';card.append(p)}
+  else{
+    const vals=points.map(p=>p.value),lo=Math.min(...vals),hi=Math.max(...vals),spread=hi-lo||1;
+    const svg=document.createElementNS('http://www.w3.org/2000/svg','svg');
+    svg.setAttribute('viewBox','0 0 400 140');svg.setAttribute('role','img');
+    svg.setAttribute('aria-label',name+'; range '+lo+' to '+hi);svg.classList.add('chart');
+    const xs=points.map((_,i)=>10+i*380/Math.max(1,points.length-1));
+    const ys=points.map(p=>125-(p.value-lo)/spread*110);
+    const line=document.createElementNS(svg.namespaceURI,'polyline');
+    line.setAttribute('points',points.map((_,i)=>xs[i]+','+ys[i]).join(' '));
+    line.setAttribute('fill','none');line.setAttribute('stroke','currentColor');
+    line.setAttribute('stroke-width','3');svg.append(line);
+    // Tooltip card (kept inside the chart's card element).
+    const tip=document.createElement('div');tip.className='chart-tip';tip.setAttribute('role','status');
+    // Data points: small visible dot + a larger invisible hit area.
+    points.forEach((point,i)=>{
+      const g=document.createElementNS(svg.namespaceURI,'g');
+      g.setAttribute('tabindex','0');
+      g.classList.add('chart-point');
+      const dot=document.createElementNS(svg.namespaceURI,'circle');
+      dot.setAttribute('cx',xs[i]);dot.setAttribute('cy',ys[i]);dot.setAttribute('r','3.5');
+      g.append(dot);
+      const hit=document.createElementNS(svg.namespaceURI,'circle');
+      hit.setAttribute('cx',xs[i]);hit.setAttribute('cy',ys[i]);hit.setAttribute('r','12');
+      hit.setAttribute('fill','transparent');g.append(hit);
+      const show=()=>{g.classList.add('is-active');
+        tip.textContent=point.date+': '+point.value.toFixed(1);
+        // Position near the point, clamped inside the card.
+        const box=svg.getBoundingClientRect();
+        const cardBox=card.getBoundingClientRect();
+        const relX=(xs[i]/400)*box.width+ (box.left-cardBox.left);
+        tip.style.left=Math.max(0,Math.min(cardBox.width-120,relX-56))+'px';
+        tip.style.top=((ys[i]/140)*box.height+(box.top-cardBox.top)-40)+'px';};
+      const hide=()=>{g.classList.remove('is-active');tip.textContent='';};
+      g.addEventListener('mouseenter',show);g.addEventListener('mouseleave',hide);
+      g.addEventListener('focus',show);g.addEventListener('blur',hide);
+      svg.append(g);
+    });
+    card.append(svg);card.append(tip);
+    const p=document.createElement('p');p.className='chart-labels';
+    p.textContent=points[0].date+' → '+points.at(-1).date+' · '+lo.toFixed(1)+'–'+hi.toFixed(1);card.append(p);
+    const details=document.createElement('details');const summary=document.createElement('summary');
+    summary.textContent='View values';details.append(summary);
+    points.forEach(point=>{const value=document.createElement('p');value.textContent=point.date+': '+point.value.toFixed(1);details.append(value)});
+    card.append(details);
+  }
+  holder.append(card);
+});}
 
 // =========================================================================
 // Global confirm (CSP-safe replacement for inline onclick="confirm()")

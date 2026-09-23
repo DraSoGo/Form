@@ -308,7 +308,27 @@ def nutrition(request):
     incomplete_uncertainty = foods_qs.filter(uncertainty__startswith="INCOMPLETE")
     totals_incomplete = incomplete_entries.exists() or incomplete_uncertainty.exists()
 
-    foods = foods_qs.order_by("-recorded_at")[:100]
+    foods = list(foods_qs.order_by("-recorded_at")[:100])
+
+    # Latest food job per entry (shown as "analyzing…" / failed + retry in
+    # the diary cards — a dead job used to look like eternal waiting).
+    job_states = {}
+    if "coaching" in settings.INSTALLED_APPS and foods:
+        from coaching.models import Job
+        latest = (
+            Job.objects.filter(task="food", user=request.user)
+            .filter(payload__entry__in=[str(f.pk) for f in foods])
+            .order_by("-created_at")
+        )
+        for job in latest:
+            entry_id = job.payload.get("entry")
+            if entry_id and entry_id not in job_states:
+                job_states[entry_id] = {"status": job.status, "pk": job.pk}
+        for f in foods:
+            f.job = job_states.get(str(f.pk))
+    else:
+        for f in foods:
+            f.job = None
 
     return render(
         request,
