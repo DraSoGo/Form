@@ -2586,3 +2586,168 @@ main { min-width: 0; }
   outline: 1px dashed var(--border);
   outline-offset: -1px;
 }
+
+/* =========================================================================
+   Food diary — desktop/tablet layout (>= 768px)
+   -------------------------------------------------------------------------
+   Deliberate grid per record; mobile keeps the stacked-card design above.
+   Column plan (identical on every row, regardless of title length):
+   [ 32px checkbox ] [ minmax(0,1fr) title+date ] [ auto macros ]
+   [ minmax(120px,auto) kcal+range+badge ] [ 28px chevron ]
+   Implemented as one outer grid on .food-row with a subgrid on the
+   summary so the clickable <summary> keeps its semantics (no
+   display:contents on interactive elements).
+   ========================================================================= */
+@media (min-width: 768px) {
+  .food-row {
+    display: grid;
+    /* Fixed value columns (not auto) so every row aligns identically —
+       each .food-row is an independent grid, auto tracks would drift
+       per-row with content length. */
+    grid-template-columns: 32px minmax(0, 1fr) 190px 150px 28px;
+    column-gap: 16px;
+    align-items: center;
+    padding: 14px 8px;
+    min-height: 72px;
+    border-bottom: 1px solid var(--border);
+    background: var(--surface);
+  }
+  .food-row:last-child { border-bottom: 0; }
+  .food-list { background: transparent; }
+
+  /* Selection: compact square, long label visually hidden (aria kept). */
+  .food-row .food-select {
+    grid-column: 1;
+    grid-row: 1;
+    min-height: 32px;
+    padding: 0;
+    justify-content: center;
+    align-self: center;
+  }
+  .food-select-label {
+    position: absolute;
+    width: 1px; height: 1px;
+    margin: -1px; padding: 0; border: 0;
+    clip: rect(0 0 0 0); clip-path: inset(50%);
+    overflow: hidden; white-space: nowrap;
+  }
+
+  /* The details element owns columns 2–4 and passes them through subgrid. */
+  .food-row .food-details {
+    grid-column: 2 / 5;
+    grid-row: 1;
+    display: grid;
+    grid-template-columns: subgrid;
+    column-gap: 16px;
+    align-items: center;
+    min-width: 0;
+  }
+  .food-row .food-summary {
+    display: grid;
+    grid-template-columns: subgrid;
+    grid-column: 1 / -1;
+    column-gap: 16px;
+    align-items: center;
+    padding: 0;
+    min-height: 0;
+  }
+
+  /* Title column: widest, two lines before clamping, date below. */
+  .food-row .food-name {
+    grid-column: 1;
+    display: block;
+    min-width: 0;
+  }
+  .food-row .food-name strong {
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
+    overflow: hidden;
+    white-space: normal;
+    overflow-wrap: anywhere;
+    font-size: 15.5px;
+    line-height: 1.4;
+  }
+  .food-row .food-name small {
+    display: block;
+    margin-top: 3px;
+    color: var(--muted);
+    font-size: 12.5px;
+  }
+
+  /* Macros column: compact, muted, its own space. */
+  .food-row .food-macros {
+    grid-column: 2;
+    font-size: 13px;
+    color: var(--muted);
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+    padding-right: 8px;
+    justify-self: end;
+  }
+
+  /* Calories: prominent, right-aligned; range + chips stack beneath. */
+  .food-row .food-kcal {
+    grid-column: 3;
+    display: grid;
+    justify-items: end;
+    gap: 3px;
+    text-align: right;
+    font-size: 16px;
+    font-weight: 650;
+    font-variant-numeric: tabular-nums;
+  }
+  .food-row .food-kcal .food-kcal-range {
+    font-size: 12px;
+    font-weight: 500;
+    justify-self: end;
+    padding-right: 0;
+  }
+  .food-row .food-chip {
+    grid-column: 3;
+    justify-self: end;
+    display: flex;
+    gap: 5px;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+  }
+
+  /* Chevron: compact fixed final column. */
+  .food-row .food-chevron {
+    grid-column: 5;
+    grid-row: 1;
+    position: static;
+    align-self: center;
+    justify-self: center;
+    top: auto; right: auto;
+  }
+  .food-row details[open] .food-chevron { transform: rotate(90deg); }
+
+  /* Expanded details span the middle columns under the summary. */
+  .food-row .food-detail { grid-column: 1 / -1; }
+
+  /* Intermediate widths (768–1023px): macros drop under the title so
+     nothing overlaps; kcal + chevron keep their columns. */
+  @media (max-width: 1023px) {
+    .food-row {
+      grid-template-columns: 32px minmax(0, 1fr) 140px 28px;
+    }
+    .food-row .food-details { grid-column: 2 / 4; }
+    .food-row .food-summary {
+      grid-template-columns: minmax(0, 1fr) minmax(110px, auto);
+      grid-template-rows: auto auto;
+      row-gap: 6px;
+    }
+    .food-row .food-name { grid-column: 1; grid-row: 1; }
+    .food-row .food-macros {
+      grid-column: 1;
+      grid-row: 2;
+      justify-self: start;
+      padding: 0;
+    }
+    .food-row .food-kcal { grid-column: 2; grid-row: 1 / span 2; }
+    .food-row .food-chip { grid-column: 2; }
+    .food-row .food-chevron { grid-column: 4; }
+  }
+}
