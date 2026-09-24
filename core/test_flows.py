@@ -979,3 +979,19 @@ class CoreFlowTests(TestCase):
         offered = list(form.fields['exercise'].queryset.values_list('pk', flat=True))
         self.assertNotIn(cardio_ex.pk, offered)
         self.assertIn(self.exercise.pk, offered)
+
+    def test_dashboard_lists_every_scheduled_exercise(self):
+        # Regression: a hidden [:6] cap made the 7th exercise look like the
+        # plan had not updated; the training page always counted all of them.
+        exercises = [Exercise.objects.create(user=self.user, name=f'Ex {i}',
+                                             primary_muscles=['Chest']) for i in range(7)]
+        items = [{'exercise': str(ex.pk), 'day': 'Push', 'sets': 3,
+                  'rep_min': 8, 'rep_max': 12} for ex in exercises]
+        data = {**self.plan_data(), 'schedule_type': 'fixed',
+                'schedule': {str(timezone.localdate().weekday()): 'Push'},
+                'exercises': items}
+        create_plan(self.user, data)
+        response = self.client.get('/')
+        listed = response.context['today_exercises']
+        self.assertEqual(len(listed), 7)
+        self.assertIn('Ex 6', [e['name'] for e in listed])

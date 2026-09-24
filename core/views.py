@@ -83,7 +83,9 @@ def dashboard(request):
                 today_exercises.append(
                     {"name": name, "detail": f"{item.get('sets', 3)} × {item.get('rep_min', 8)}–{item.get('rep_max', 12)}"}
                 )
-        today_exercises = today_exercises[:6]
+        # No cap: show every scheduled exercise for the day. The old [:6]
+        # slice silently hid the 7th+ exercise and looked like stale data
+        # (the training page's plan card has always counted all of them).
     # One query for every muscle group (the old per-muscle calls re-fetched
     # the same 7-day sets ten times per dashboard load).
     summaries = muscle_summaries(request.user)
