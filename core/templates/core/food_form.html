@@ -17,14 +17,12 @@
 {% elif entry %}
 <section class="card">
   <div class="actions">
-    {# Note-only analysis: no photo needed — the AI parses the note text. #}
     <form method="post" action="/coach/food/{{ entry.pk }}/">{% csrf_token %}<input type="hidden" name="reestimate" value="1"><button>Estimate from note with AI</button></form>
   </div>
   {% if entry.uncertainty %}<p class="muted">{{ entry.uncertainty }}</p>{% endif %}
 </section>
 {% endif %}
 
-{# ── Section: Nutrition Summary (AI result first, read-only view) ── #}
 {% if entry and entry.ai_breakdown %}
   <section class="card meal-summary-card">
     <div id="food-breakdown-primary" class="meal-primary"></div>
@@ -46,7 +44,6 @@
   {{ form.note.as_field_group }}
   {{ form.recorded_at.as_field_group }}
 
-  {# ── Editable nutrition & details — collapsed by default when AI result exists ── #}
   <details class="card-inner-details" {% if form.errors or not entry or not entry.ai_breakdown %}open{% endif %}>
     <summary>Edit details &amp; nutrition</summary>
     <p class="helptext">Name, portion and nutrition values. Sugar and Sodium can stay empty if unknown.</p>

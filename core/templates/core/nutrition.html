@@ -225,9 +225,6 @@
 
                 <div class="actions-row">
                   <a class="button secondary" href="/nutrition/{{ f.pk }}/">Edit</a>
-                  {# Quick AI estimate only where it adds something: manual /
-                     not-yet-analyzed entries (analyzed ones use Re-estimate
-                     on the edit page). #}
                   {% if f.state == "manual" or not f.ai_breakdown %}
                   <form method="post" action="/coach/food/{{ f.pk }}/" style="margin:0">
                     {% csrf_token %}
