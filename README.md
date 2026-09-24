@@ -1,6 +1,8 @@
 <p align="center">
-  <img src="docs/media/form_github.jpeg" width="500" alt="Form logo">
+  <img src="core/static/core/icon-192.png" width="112" alt="Form logo">
 </p>
+
+<h1 align="center">Form</h1>
 
 <p align="center">A private fitness, nutrition, and AI coaching app built for one person.</p>
 
@@ -19,32 +21,33 @@ Form combines meal tracking, workout logging, body measurements, recovery data, 
 
 ## Features
 
-### 1. Today dashboard
+### 1. Today dashboard with training heatmap
 
-The dashboard shows today's nutrition progress, the next scheduled session, recent recovery readings, and shortcuts to the coach and food diary.
+The dashboard shows today's nutrition progress, the next scheduled session, latest recovery readings, and a GitHub-style heatmap of every training day over the last year.
 
 - Daily calories and macronutrient progress
+- Training activity heatmap: the last 52 weeks, one cell per day, green intensity by completed working sets and cardio
+- Streak counter that respects your plan: scheduled rest days freeze the streak instead of breaking it
 - Next workout based on the active plan
 - Latest weight and sleep values
 - Recent meals and end-of-day analysis
 
-<p align="center">
-  <img src="docs/media/01-dashboard.gif" width="800" height="648" alt="Today dashboard">
-</p>
+![Dashboard with training heatmap](docs/media/01-dashboard.gif)
 
 ### 2. Food diary and photo analysis
 
-Log a meal manually or choose a photograph from the camera, photo library, or device files. The configured vision model can estimate the meal, but you review and edit every value before relying on it.
+Log a meal manually, from a photograph, or from just a note. The configured AI can estimate the meal — with or without an image — but you review and edit every value before relying on it.
 
 - Calories, protein, carbohydrates, fat, fiber, sugar, and sodium
 - Private authenticated food photographs
-- AI photo analysis with editable estimates
-- Saved foods and reusable meal templates
-- Daily totals and nutrition targets
+- AI photo analysis with editable, ingredient-level breakdowns
+- Note-only analysis: type "ข้าวผัดกุ้ง 1 จาน ไข่ดาว 1 ฟอง" and the AI parses it without a photo
+- Re-estimate with AI: your confirmed component weights stay fixed while the AI re-estimates only the rest
+- Live job status in the diary: "AI analysis in progress…" or a failed-state retry button — no more silent dead jobs
+- Saved foods, reusable meal templates, and one-tap "Estimate with AI" on unanalyzed entries
+- Responsive entry cards: mobile stacked cards, desktop grid rows
 
-<p align="center">
-  <img src="docs/media/02-food-diary.gif" width="800" height="648" alt="Food diary and photo analysis">
-</p>
+![Food diary](docs/media/02-food-diary.gif)
 
 ### 3. Training plans and exercise library
 
@@ -55,10 +58,9 @@ Build fixed-calendar or rotating workout plans from your own exercise library. E
 - Equipment sourced from Settings
 - Plan version history
 - Exercise archive and AI-assisted metadata
+- Interactive muscle map on the training page, per training day
 
-<p align="center">
-  <img src="docs/media/03-training-plan.gif" width="800" height="648" alt="Training plans and exercise library">
-</p>
+![Training plan](docs/media/03-training-plan.gif)
 
 ### 4. Live workout session
 
@@ -69,55 +71,63 @@ Run a session from your phone, record actual performance, and keep the previous 
 - Rest timers for 60, 90, and 120 seconds
 - Copy values from the previous session
 - Complete, edit, or delete individual entries
+- New-personal-record toast the moment a completed set beats your best
 
-<p align="center">
-  <img src="docs/media/04-workout-session.gif" width="800" height="648" alt="Live workout session">
-</p>
+![Workout session](docs/media/04-workout-session.gif)
 
-### 5. Body and recovery
+### 5. Personal records
 
-Record body composition, sleep, and daily steps without overwriting historical measurements. Source labels keep manual, smart-scale, and calculated readings distinguishable.
+Every strength exercise's best completed working set, with history and progress at a glance.
+
+- Best set per exercise with estimated 1RM (Epley formula)
+- Progress chart: daily best e1RM over time, drawn on expand
+- Recent best attempts table
+- Effort strip: recent RPE/RIR per session, color-coded from light to maximal
+- Shareable from the dashboard, training page, and in-session "Previous session" card
+
+> **GIF placeholder:** `docs/media/09-personal-records.gif`. Replace this note with the GIF after recording it.
+
+### 6. Body and recovery
+
+Record body composition, tape measurements, sleep, and daily steps without overwriting historical measurements. Source labels keep manual, smart-scale, and calculated readings distinguishable.
 
 - Weight, body fat, muscle, visceral fat, body age, BMR, and BMI
+- Tape measurements: waist, arm, and thigh (optional, charted in Trends)
 - Measurement source and timestamp
 - Sleep history
 - Daily step count
 - Edit and delete controls for owned records
 
-<p align="center">
-  <img src="docs/media/05-body-recovery.gif" width="800" height="648" alt="Body and recovery">
-</p>
+![Body and recovery](docs/media/05-body-recovery.gif)
 
-### 6. Trends
+### 7. Trends
 
-Review changes across 7, 14, or 30 days. Training tables show weekly volume and recent exercise performance alongside body and nutrition charts.
+Review changes across 7, 14, or 30 days — or the whole last year in one bounded All view. Charts are interactive: hover or focus any data point to see its exact date and value.
 
-- Body and nutrition charts
+- Interactive charts with keyboard-accessible data-point tooltips
+- Body, nutrition, sleep, and tape-measurement series
 - Weekly direct and indirect training volume
-- Best load and recent set performance
+- Best load and recent set performance per exercise
 - Same-source body measurement comparisons
 
-<p align="center">
-  <img src="docs/media/06-trends.gif" width="800" height="648" alt="Trends">
-</p>
+![Trends](docs/media/06-trends.gif)
 
-### 7. AI coach
+### 8. AI coach
 
-Ask questions, analyze recent workouts or body trends, and generate a daily summary. Model output is stored as a reviewable result. Proposed target or plan changes require an explicit accept action.
+Ask questions, analyze recent workouts or body trends, and generate a daily summary. Model output is stored as a reviewable result grouped by day. Proposed target or plan changes require an explicit accept action.
 
 - Coach chat with bounded personal context
 - Food, workout, body, and daily-summary tasks
 - Thai responses from configured coaching prompts
-- Provider fallback and manual retry
+- Provider fallback, transient-fault retry, and manual retry buttons
 - Accept or reject versioned suggestions
+- Analysis history grouped by local date, latest day expanded
 
-<p align="center">
-  <img src="docs/media/07-ai-coach.gif" width="800" height="648" alt="AI coach">
-</p>
+![AI coach](docs/media/07-ai-coach.gif)
 
-### 8. Settings, equipment, and data tools
+### 9. Settings, equipment, and data tools
 
-Settings holds the profile values used for target calculations and the equipment list used by the exercise form. It also links to password, AI, push notification, export, and import controls.
+Settings holds the profile values used for target calculations and the equipment list used by the exercise form. AI model discovery, testing, and routing are owner-only controls. It also links to password, push notification, export, and import controls.
 
 - Age, sex, height, goal, activity level, timezone, and summary time
 - Equipment inventory
@@ -125,10 +135,9 @@ Settings holds the profile values used for target calculations and the equipment
 - JSON archive and CSV exports
 - Validated archive import
 - Photo retention and password controls
+- Owner-only AI model and routing management
 
-<p align="center">
-  <img src="docs/media/08-settings.gif" width="800" height="648" alt="Settings, equipment, and data tools">
-</p>
+![Settings](docs/media/08-settings.gif)
 
 ## Quick start
 
@@ -176,6 +185,7 @@ Copy `.env.example` to the protected runtime file and replace every placeholder.
 | AI pools | `AI_CLAUDE_*`, `AI_GPT_*`, `AI_CHINA_*` |
 | Push | `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT` |
 | Backup validation | `BACKUP_CIFS_SOURCE` |
+| Backup alerts (optional) | `KUMA_PUSH_URL` — push heartbeat to Uptime Kuma on every backup success/failure |
 
 See [Deployment](docs/deployment.md) for the production layout and [AI routing](docs/ai-routing.md) for model discovery, testing, and task routing.
 
@@ -185,20 +195,20 @@ See [Deployment](docs/deployment.md) for the production layout and [AI routing](
 2. Create nutrition targets and a workout plan.
 3. Add exercises as strength or cardio activities.
 4. Log meals, body readings, sleep, steps, and workout sessions.
-5. Configure verified AI models under **Coach → AI models and routing**.
+5. Configure verified AI models under **Coach → AI models and routing** (owner account only).
 6. Review every AI estimate or suggested change before accepting it.
 
 The site includes a web app manifest and service worker. Use your mobile browser's **Add to Home Screen** action to install it as a PWA.
 
 ## AI and privacy
 
-Manual tracking works without an AI provider. When you request analysis, the app sends a bounded set of relevant records to the configured provider. Food analysis sends a resized copy of the selected image. Provider credentials stay on the server.
+Manual tracking works without an AI provider. When you request analysis, the app sends a bounded set of relevant records to the configured provider. Food analysis sends a resized copy of the selected image; note-only analysis sends text alone. Provider credentials stay on the server.
 
 AI output can contain mistakes. Food values remain editable, and coaching suggestions cannot change the active nutrition target or workout plan until you accept them. Read [Security and privacy](docs/security.md) and [AI routing](docs/ai-routing.md) before connecting a provider.
 
 ## Backup and recovery
 
-The backup tool creates PostgreSQL dumps and content-addressed media snapshots under the configured NAS mount. It verifies checksums, retains daily and weekly recovery points, and can restore into an isolated test database without overwriting production.
+The backup tool creates PostgreSQL dumps and content-addressed media snapshots under the configured NAS mount. It verifies checksums, retains daily and weekly recovery points, and can restore into an isolated test database without overwriting production. Failures are never silent: the tool records status, pushes an optional Uptime Kuma heartbeat, and systemd writes a visible failure marker.
 
 ```sh
 sudo python3 ops/backup.py backup
@@ -206,7 +216,7 @@ sudo python3 ops/backup.py verify
 sudo python3 ops/backup.py restore-test
 ```
 
-Set `BACKUP_CIFS_SOURCE` when you want the job to require one exact CIFS source. Read [Backup and restore](docs/backup-restore.md) before enabling timers or recovering data.
+Set `BACKUP_CIFS_SOURCE` when you want the job to require one exact CIFS source, and `KUMA_PUSH_URL` for heartbeat alerting. Read [Backup and restore](docs/backup-restore.md) before enabling timers or recovering data.
 
 ## Testing
 
@@ -217,7 +227,7 @@ SECRET_KEY=test-only USE_SQLITE=1 SECURE_COOKIES=false \
 .venv/bin/python -m unittest discover -s ops -p 'test_*.py' -v
 ```
 
-Tests use isolated data and mocked provider responses. Live AI checks, browser notification permission, and native PWA installation require explicit manual verification.
+Tests use isolated data and mocked provider responses (180 application tests, 16 ops tests). Live AI checks, browser notification permission, and native PWA installation require explicit manual verification.
 
 ## Documentation
 
@@ -231,7 +241,3 @@ Tests use isolated data and mocked provider responses. Live AI checks, browser n
 | [Backup and restore](docs/backup-restore.md) | NAS snapshots and disaster recovery |
 | [Security and privacy](docs/security.md) | Authentication, secrets, photos, and exposure controls |
 | [Verification record](docs/verification.md) | Tested behavior and remaining physical-device checks |
-
-## Project boundaries
-
-Form is a single-user record-keeping and coaching tool. It does not provide public registration, medical diagnosis, or offline data synchronization. Smart-scale readings and image-based nutrition estimates are approximate; use consistent measurement sources and review estimates before using them.

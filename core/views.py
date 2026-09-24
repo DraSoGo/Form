@@ -8,7 +8,8 @@ from django.contrib.auth import logout, update_session_auth_hash
 from django.contrib.auth.forms import PasswordChangeForm
 from django.core.exceptions import ValidationError
 from django.db import connection, transaction
-from django.db.models import Avg, Max, Sum
+from django.db.models import Avg, F, Max, Sum
+from django.db.models import functions as db_functions
 from django.http import FileResponse, HttpResponse, JsonResponse, Http404
 from django.shortcuts import render, redirect, get_object_or_404
 from django.utils import timezone
@@ -17,7 +18,7 @@ from .models import *
 from .forms import *
 from .services import *
 from .archive import export_archive, validate_archive, import_archive, export_csv
-from .muscles import muscle_summary, region_states
+from .muscles import muscle_summaries, muscle_summary, region_states
 
 
 def health(request):
@@ -83,9 +84,13 @@ def dashboard(request):
                     {"name": name, "detail": f"{item.get('sets', 3)} × {item.get('rep_min', 8)}–{item.get('rep_max', 12)}"}
                 )
         today_exercises = today_exercises[:6]
+    # One query for every muscle group (the old per-muscle calls re-fetched
+    # the same 7-day sets ten times per dashboard load).
+    summaries = muscle_summaries(request.user)
     muscle_groups = [
-        {"key": muscle, **muscle_summary(request.user, muscle)}
+        {"key": muscle, **summaries[muscle]}
         for muscle in ["chest", "back", "shoulders", "biceps", "triceps", "abs", "glutes", "quads", "hamstrings", "calves"]
+        if muscle in summaries
     ]
     return render(
         request,
@@ -102,11 +107,20 @@ def dashboard(request):
             "today_exercises": today_exercises,
             "muscle_regions": region_states(request.user, 7),
             "muscle_groups": muscle_groups,
+            "activity": training_activity(request.user),
             "foods": FoodEntry.objects.filter(
-                user=request.user, recorded_at__gte=start
+                user=request.user, recorded_at__gte=start, recorded_at__lt=end
             )[:5],
             "sessions": WorkoutSession.objects.filter(user=request.user)[:3],
         },
+    )
+
+
+def personal_records_view(request):
+    return render(
+        request,
+        "core/prs.html",
+        {"records": personal_records(request.user)},
     )
 
 
@@ -141,7 +155,7 @@ def body(request):
             "form": form,
             "advanced_form": advanced_form,
             "advanced_fields": [
-                advanced_form[f] for f in ("body_fat", "muscle", "visceral_fat", "body_age", "bmr", "bmi")
+                advanced_form[f] for f in ("body_fat", "muscle", "visceral_fat", "body_age", "bmr", "bmi", "waist", "arm", "thigh")
             ],
             "latest": latest_summary,
             "measurements": BodyMeasurement.objects.filter(user=request.user)[:100],
@@ -295,7 +309,27 @@ def nutrition(request):
     incomplete_uncertainty = foods_qs.filter(uncertainty__startswith="INCOMPLETE")
     totals_incomplete = incomplete_entries.exists() or incomplete_uncertainty.exists()
 
-    foods = foods_qs.order_by("-recorded_at")[:100]
+    foods = list(foods_qs.order_by("-recorded_at")[:100])
+
+    # Latest food job per entry (shown as "analyzing…" / failed + retry in
+    # the diary cards — a dead job used to look like eternal waiting).
+    job_states = {}
+    if "coaching" in settings.INSTALLED_APPS and foods:
+        from coaching.models import Job
+        latest = (
+            Job.objects.filter(task="food", user=request.user)
+            .filter(payload__entry__in=[str(f.pk) for f in foods])
+            .order_by("-created_at")
+        )
+        for job in latest:
+            entry_id = job.payload.get("entry")
+            if entry_id and entry_id not in job_states:
+                job_states[entry_id] = {"status": job.status, "pk": job.pk}
+        for f in foods:
+            f.job = job_states.get(str(f.pk))
+    else:
+        for f in foods:
+            f.job = None
 
     return render(
         request,
@@ -315,50 +349,57 @@ def nutrition(request):
 
 
 def _recompute_breakdown(request, entry):
-    """Rebuild ai_breakdown from the user-edited breakdown_json payload.
-
-    Returns True when the payload was valid and applied. The recomputed
-    totals are written to BOTH the entry fields and ai_breakdown so the
-    two can never disagree; completeness is re-derived from the remaining
-    unmatched majors (a user who adds the missing ingredient makes the
-    meal complete; confirming alone does not).
-    """
-    import json as _json
-    from .nutrition_ref import REFERENCE
-    from . import nutrition_calc
-
+    """Parse the breakdown_json POST payload and apply it to the entry."""
     raw = request.POST.get("breakdown_json", "").strip()
     if not raw:
         return False
     try:
-        payload = _json.loads(raw)
+        payload = json.loads(raw)
     except (ValueError, TypeError):
         return False
     if not isinstance(payload, dict) or not isinstance(payload.get("items"), list):
         return False
+    return _apply_breakdown(entry, payload)
+
+
+def _apply_breakdown(entry, payload):
+    """Rebuild ai_breakdown from a user-edited breakdown payload dict.
+
+    Returns True when the payload was valid and applied. The recomputed
+    totals are written to BOTH the entry fields and ai_breakdown so the
+    two can never disagree; completeness is re-derived from the remaining
+    unmatched majors (a user who adds the missing ingredient with values
+    makes the meal complete; a name-only row does not).
+    """
+    from .nutrition_ref import REFERENCE
+    from . import nutrition_calc
 
     items = []
     for item in payload["items"][:15]:
         if not isinstance(item, dict):
             continue
-        ref_key = str(item.get("ref_key") or "custom")
-        weight = float(item.get("weight_g") or 0)
-        ing = {
-            "ref_key": ref_key if ref_key in REFERENCE else "custom",
-            "name_th": str(item.get("name_th") or "")[:80],
-            "weight_g": min(weight, 2000),
-            "min_g": min(float(item.get("min_g") or 0), 2000),
-            "max_g": min(float(item.get("max_g") or weight), 2000),
-            "user_confirmed": bool(item.get("user_confirmed")),
-            "fraction_consumed": min(max(float(item.get("fraction_consumed") or 1.0), 0), 1),
-        }
-        cv = item.get("custom_values")
-        if isinstance(cv, dict) and any(v is not None for v in cv.values()):
-            ing["custom_values"] = {
-                k: (None if cv.get(k) in (None, "") else float(cv[k]))
-                for k in ("kcal", "protein", "carbs", "fat", "fiber", "sodium", "sugar")
-                if k in cv
+        try:
+            ref_key = str(item.get("ref_key") or "custom")
+            weight = float(item.get("weight_g") or 0)
+            ing = {
+                "ref_key": ref_key if ref_key in REFERENCE else "custom",
+                "name_th": str(item.get("name_th") or "")[:80],
+                "weight_g": min(weight, 2000),
+                "min_g": min(float(item.get("min_g") or 0), 2000),
+                "max_g": min(float(item.get("max_g") or weight), 2000),
+                "user_confirmed": bool(item.get("user_confirmed")),
+                "fraction_consumed": min(max(float(item.get("fraction_consumed") or 1.0), 0), 1),
             }
+            cv = item.get("custom_values")
+            if isinstance(cv, dict) and any(v is not None for v in cv.values()):
+                ing["custom_values"] = {
+                    k: (None if cv.get(k) in (None, "") else float(cv[k]))
+                    for k in ("kcal", "protein", "carbs", "fat", "fiber", "sodium", "sugar")
+                    if k in cv
+                }
+        except (TypeError, ValueError):
+            # Malformed numbers must not 500 the save; skip the bad row.
+            continue
         if ing["weight_g"] > 0 or ing.get("custom_values"):
             items.append(ing)
     if not items:
@@ -371,11 +412,32 @@ def _recompute_breakdown(request, entry):
         for u in (payload.get("unmatched") or [])[:6]
         if isinstance(u, dict)
     ]
+    # An unmatched component the user has now added as an ingredient WITH
+    # nutrition values is resolved: drop it so the meal can become
+    # complete again. A blank custom row (name only, no values) does not
+    # resolve it — the meal honestly stays incomplete until values exist.
+    resolved_names = set()
+    for i in items:
+        name = i["name_th"].strip().casefold()
+        if not name:
+            continue
+        if i["ref_key"] != "custom" or i.get("custom_values"):
+            resolved_names.add(name)
 
+    def _is_resolved(u):
+        n = u["name_th"].strip().casefold()
+        return bool(n) and any(
+            n == x or (len(n) >= 3 and (n in x or x in n))
+            for x in resolved_names
+        )
+
+    unmatched = [u for u in unmatched if not _is_resolved(u)]
+
+    strategy = payload.get("strategy")
     computed = nutrition_calc.compute_meal(
         items,
         dish_name=str(payload.get("dish_name") or entry.name)[:160],
-        strategy=payload.get("strategy") if payload.get("strategy") in ("whole_dish", "components", "hybrid") else "components",
+        strategy=strategy if strategy in ("whole_dish", "components", "hybrid") else "components",
         unmatched=unmatched,
         completeness="complete",  # re-derived below from unmatched majors
     )
@@ -402,16 +464,15 @@ def _recompute_breakdown(request, entry):
     }
     # Write recomputed totals onto the entry so DB fields, breakdown and
     # the diary always agree with the ingredient table the user edited.
-    # calories/protein/carbs/fat/fiber are NOT NULL columns: when the
-    # recompute yields None (a custom ingredient with no values), fall
-    # back to 0 instead of crashing the save; sugar/sodium stay nullable.
-    not_null = {"calories", "protein", "carbs", "fat", "fiber"}
+    # A nutrient the recompute could not resolve stays as-is (form value /
+    # previous save): zeroing it here destroyed good data whenever one
+    # blank custom row voided a total.
     for src, dst in [("kcal", "calories"), ("protein", "protein"), ("carbs", "carbs"),
                      ("fat", "fat"), ("fiber", "fiber"), ("sugar", "sugar"), ("sodium", "sodium")]:
         value = computed["totals"].get(src)
-        if value is None and dst in not_null:
-            value = 0
-        setattr(entry, dst, None if value is None else round(value, 2))
+        if value is None:
+            continue
+        setattr(entry, dst, round(value, 2))
     # A custom-only range collapses to a single point (min==max==weight);
     # fall back to a ±15% band around the recomputed kcal so the UI range
     # stays informative instead of reading "571-571 kcal".
@@ -427,7 +488,11 @@ def _recompute_breakdown(request, entry):
         )
     else:
         majors = ", ".join(u["name_th"] for u in unmatched if u["estimated_share"] == "major")
-        entry.uncertainty = f"INCOMPLETE — majors still missing: {majors}. " + entry.uncertainty[:140]
+        prev = entry.uncertainty or ""
+        if prev.startswith("INCOMPLETE"):
+            # Strip a previous save's prefix so repeated saves never stack.
+            prev = prev.split(". ", 1)[1] if ". " in prev else ""
+        entry.uncertainty = f"INCOMPLETE — majors still missing: {majors}. " + prev[:140]
     return True
 
 
@@ -670,12 +735,16 @@ def workouts(request):
             selected_day = parsed
     except ValueError:
         selected_day = None
+    # One query for every muscle group (per-day view included — the old
+    # per-muscle calls re-fetched the same sets ten times per load).
+    day_summaries = muscle_summaries(request.user, on_date=selected_day)
     muscle_groups = [
         {
             "key": muscle,
-            **muscle_summary(request.user, muscle, on_date=selected_day),
+            **day_summaries[muscle],
         }
         for muscle in ["chest", "back", "shoulders", "biceps", "triceps", "abs", "glutes", "quads", "hamstrings", "calves"]
+        if muscle in day_summaries
     ]
     return render(
         request,
@@ -958,7 +1027,11 @@ def session_detail(request, pk):
 def set_edit(request, pk):
     item = get_object_or_404(WorkoutSet, pk=pk, session__user=request.user)
     form = SetForm(request.POST or None, instance=item)
-    form.fields["exercise"].queryset = Exercise.objects.filter(user=request.user)
+    # Strength sets must reference strength exercises (cardio rows have
+    # their own editor) — mixing them corrupts PR/volume reporting.
+    form.fields["exercise"].queryset = Exercise.objects.filter(
+        user=request.user, activity_type="strength"
+    )
     if request.method == "POST" and form.is_valid():
         form.save()
         return redirect("/workouts/session/" + str(item.session_id) + "/")
@@ -983,6 +1056,13 @@ def cardio_edit(request, pk):
 def set_complete(request, pk):
     item = get_object_or_404(WorkoutSet, pk=pk, session__user=request.user)
     item.completed = not item.completed
+    if item.completed and item.set_type == "working" and item.weight:
+        # Celebrate only on the way up (un-completing must stay silent).
+        if is_personal_record(request.user, item.exercise_id, item.weight, item.reps):
+            messages.success(
+                request,
+                f"New PR · {item.exercise.name}: {item.weight:g} kg × {item.reps}",
+            )
     item.save(update_fields=["completed"])
     return redirect(
         "/workouts/session/" + str(item.session_id) + "/?rest=" + str(item.rest_seconds)
@@ -1012,18 +1092,20 @@ def trends(request):
         days = 30
     if days not in [7, 14, 30, 0]:
         days = 30
-    # days=0 means "all history": no lower bound on the window.
-    start = None if days == 0 else timezone.now() - timedelta(days=days)
+    # days=0 ("All") is bounded to a 365-day window on EVERY query: the
+    # charts already capped nutrition/performance at 365 points, and the
+    # remaining body/sleep/workout reads used to scan unbounded history.
+    window = 365 if days == 0 else days
+    start = timezone.now() - timedelta(days=window)
     groups = {}
     body_qs = BodyMeasurement.objects.filter(user=request.user)
-    if start is not None:
-        body_qs = body_qs.filter(recorded_at__gte=start)
+    body_qs = body_qs.filter(recorded_at__gte=start)
     for entry in body_qs.order_by("recorded_at"):
-        for metric in ["weight", "body_fat", "muscle"]:
+        for metric in ["weight", "body_fat", "muscle", "waist", "arm", "thigh"]:
             value = getattr(entry, metric)
             if value is not None:
                 groups.setdefault(
-                    metric + " · " + entry.get_source_display(), []
+                    metric.replace("_", " ").title() + " · " + entry.get_source_display(), []
                 ).append(
                     {
                         "date": timezone.localtime(entry.recorded_at).strftime("%d %b"),
@@ -1033,20 +1115,23 @@ def trends(request):
     today = timezone.localdate()
     daily = []
     if days == 0:
-        # All history: one point per day with logged food, earliest to latest.
-        first = FoodEntry.objects.filter(user=request.user).order_by("recorded_at").first()
-        if first:
-            first_day = timezone.localtime(first.recorded_at).date()
-            span = (today - first_day).days + 1
-        else:
-            span = 1
-        for offset in reversed(range(span)):
-            date = today - timedelta(days=offset)
-            day_start = timezone.make_aware(datetime.combine(date, time.min))
-            values = nutrition_totals(
-                request.user, day_start, day_start + timedelta(days=1)
-            )
-            daily.append({"date": date.strftime("%d %b"), **values})
+        # All history: one aggregate query grouped by local day (the old
+        # per-day loop fired one nutrition_totals query per historical day),
+        # bounded to the 365-day window used by every other All-view query.
+        rows = (
+            FoodEntry.objects.filter(user=request.user, recorded_at__gte=start)
+            .annotate(day=db_functions.TruncDate("recorded_at", tz=timezone.get_current_timezone()))
+            .values("day")
+            .annotate(**{x: Sum(x) for x in NUTRIENTS})
+            .order_by("day")
+        )
+        daily = [
+            {
+                "date": row["day"].strftime("%d %b"),
+                **{x: float(row[x] or 0) for x in NUTRIENTS},
+            }
+            for row in rows
+        ]
     else:
         for offset in reversed(range(days)):
             date = today - timedelta(days=offset)
@@ -1061,55 +1146,55 @@ def trends(request):
     groups["Calories"] = [{"date": d["date"], "value": d["calories"]} for d in logged]
     groups["Protein"] = [{"date": d["date"], "value": d["protein"]} for d in logged]
     sleep_qs = SleepEntry.objects.filter(user=request.user).order_by("date")
-    if start is not None:
-        sleep_qs = sleep_qs.filter(date__gte=start.date())
+    sleep_qs = sleep_qs.filter(date__gte=start.date())
     groups["Sleep"] = [
         {"date": s.date.strftime("%d %b"), "value": float(s.hours)}
         for s in sleep_qs
     ]
     performance = []
-    for exercise in Exercise.objects.filter(user=request.user):
-        sets = (
-            WorkoutSet.objects.filter(
-                session__user=request.user,
-                exercise=exercise,
-                completed=True,
-            )
-            .exclude(set_type="warmup")
-            .select_related("session")
-            .order_by("session__started_at")
+    # One query for every exercise's completed sets (the old loop fired a
+    # set query per exercise), local-timezone dates (UTC formatting used
+    # to shift post-midnight sessions to the previous day). `start` is
+    # always set — the All view uses the same 365-day window as everything
+    # else in this view.
+    perf_rows = (
+        WorkoutSet.objects.filter(
+            session__user=request.user,
+            session__started_at__gte=start,
+            completed=True,
         )
-        if start is not None:
-            sets = sets.filter(session__started_at__gte=start)
-        entries = [
-            {
-                "date": s.session.started_at.strftime("%d %b"),
-                "weight": s.weight,
-                "reps": s.reps,
-                "rir": s.rir,
-                "rpe": s.rpe,
-            }
-            for s in sets
-        ]
-        if entries:
-            performance.append(
-                {
-                    "name": exercise.name,
-                    "entries": entries,
-                    "pr": max(s["weight"] for s in entries),
-                }
-            )
-    # Summary cards
-    workout_qs = WorkoutSession.objects.filter(user=request.user)
-    if start is not None:
-        workout_qs = workout_qs.filter(started_at__gte=start)
-    workout_count = workout_qs.count()
-    span_for_avg = days if days > 0 else max(
-        1, (today - timezone.localtime(
-            workout_qs.order_by("started_at").values_list("started_at", flat=True).first()
-            or timezone.now()
-        ).date()).days + 1
+        .exclude(set_type="warmup")
+        .exclude(weight__isnull=True)
+        .annotate(ex_name=F("exercise__name"), started=F("session__started_at"))
+        .values("exercise_id", "ex_name", "weight", "reps", "rir", "rpe", "started")
+        .order_by("started")
     )
+    by_exercise = {}
+    for row in perf_rows:
+        by_exercise.setdefault((row["exercise_id"], row["ex_name"]), []).append(
+            {
+                "date": timezone.localtime(row["started"]).strftime("%d %b"),
+                "weight": row["weight"],
+                "reps": row["reps"],
+                "rir": row["rir"],
+                "rpe": row["rpe"],
+            }
+        )
+    for (_pk, name), entries in by_exercise.items():
+        performance.append(
+            {
+                "name": name,
+                "entries": entries,
+                "pr": max(e["weight"] for e in entries),
+            }
+        )
+    # Summary cards
+    workout_qs = WorkoutSession.objects.filter(
+        user=request.user, started_at__gte=start
+    )
+    workout_count = workout_qs.count()
+    # All view averages over the same 365-day window as the queries above.
+    span_for_avg = window
     workout_sub = (
         f"{round(workout_count / span_for_avg * 7, 1)} per week"
         if workout_count else "No sessions in this period"

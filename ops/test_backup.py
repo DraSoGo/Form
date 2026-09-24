@@ -37,6 +37,30 @@ class BackupTests(unittest.TestCase):
                 self.assertEqual(backup.deployed_revision(), '481a263deadbeef')
                 run.assert_not_called()
 
+    def test_deployed_revision_falls_back_to_env_tag_when_git_fails(self):
+        import subprocess
+        with tempfile.TemporaryDirectory() as directory, patch.object(backup, 'APP', Path(directory)):
+            (Path(directory) / '.env').write_text('FITNESS_IMAGE_TAG=deadbee\nOTHER=1\n')
+            with patch.object(backup, 'run', side_effect=subprocess.CalledProcessError(128, 'git')):
+                self.assertEqual(backup.deployed_revision(), 'deadbee')
+
+    def test_deployed_revision_returns_unknown_when_everything_fails(self):
+        import subprocess
+        with tempfile.TemporaryDirectory() as directory, patch.object(backup, 'APP', Path(directory)):
+            with patch.object(backup, 'run', side_effect=subprocess.CalledProcessError(128, 'git')):
+                self.assertEqual(backup.deployed_revision(), 'unknown')
+
+    def test_notify_push_is_noop_without_url_and_never_raises(self):
+        with patch.dict('os.environ', {}, clear=False):
+            import os
+            os.environ.pop('KUMA_PUSH_URL', None)
+            with tempfile.TemporaryDirectory() as directory, patch.object(backup, 'APP', Path(directory)):
+                # No runtime.env either → complete no-op, no exception.
+                backup.notify_push('up', 'backup_ok')
+        # With a URL that errors, the call must still not raise.
+        with patch.dict('os.environ', {'KUMA_PUSH_URL': 'http://127.0.0.1:1/push/abc'}):
+            backup.notify_push('down', 'simulated failure')
+
     def test_backup_seals_expected_database_before_resuming(self):
         with tempfile.TemporaryDirectory() as directory:
             app = Path(directory) / 'app'

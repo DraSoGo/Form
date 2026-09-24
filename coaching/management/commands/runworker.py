@@ -1,9 +1,15 @@
 import time
 import logging
+from datetime import timedelta
 from django.core.management.base import BaseCommand
+from django.utils import timezone
 from core.services import retain_images
 from coaching.services import schedule,claim_job,run_job
 logger=logging.getLogger(__name__)
+def maintain():
+    from coaching.models import RequestAttempt
+    # Diagnostic attempts are logs: keep 90 days, then let them go.
+    RequestAttempt.objects.filter(created_at__lt=timezone.now()-timedelta(days=90)).delete()
 class Command(BaseCommand):
     help='Poll durable coaching jobs, local-date summary schedule, trend rules and image retention.'
     def add_arguments(self,parser): parser.add_argument('--once',action='store_true')
@@ -13,7 +19,7 @@ class Command(BaseCommand):
             job=None
             try:
                 if time.monotonic()-last_maintenance>=300:
-                    schedule();retain_images();last_maintenance=time.monotonic()
+                    schedule();retain_images();maintain();last_maintenance=time.monotonic()
                 job=claim_job()
                 if job:
                     try: run_job(job)

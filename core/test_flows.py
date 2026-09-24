@@ -8,6 +8,7 @@ from pathlib import Path
 from PIL import Image
 from django.conf import settings
 from django.contrib.auth import get_user_model
+from django.contrib.messages import get_messages
 from django.core.exceptions import ValidationError
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import Client, TestCase, override_settings
@@ -331,8 +332,13 @@ class CoreFlowTests(TestCase):
                                          (current, True, 'warmup'), (current, False, 'working'),
                                          (old, True, 'working')]:
             WorkoutSet.objects.create(session=session, exercise=self.exercise, completed=completed, set_type=kind)
-        self.assertEqual(weekly_volume(self.user), {'Chest': {'direct': 2, 'indirect': 0},
-                                                   'Triceps': {'direct': 0, 'indirect': 2}})
+        # weekly_volume now returns the full canonical muscle map (zeros
+        # included); assert the exercised muscles and spot-check a zero.
+        volume = weekly_volume(self.user)
+        self.assertEqual(volume['Chest'], {'direct': 2, 'indirect': 0})
+        self.assertEqual(volume['Triceps'], {'direct': 0, 'indirect': 2})
+        self.assertEqual(volume['Back'], {'direct': 0, 'indirect': 0})
+        self.assertNotIn('Old', [k for k, v in volume.items() if v['direct'] or v['indirect']])
 
     def test_body_create_and_edit_preserve_other_history(self):
         old = BodyMeasurement.objects.create(user=self.user, weight=83, source='smart_scale')
@@ -736,3 +742,240 @@ class CoreFlowTests(TestCase):
         self.assertEqual(WorkoutPlan.objects.count(), 2)
         latest = WorkoutPlan.objects.first()
         self.assertEqual(latest.exercises, plan.exercises)
+
+    # ── Training activity heatmap + streak ──────────────────────────────
+
+    def test_training_activity_levels_and_streak(self):
+        from core.services import training_activity
+        plan = create_plan(self.user, self.plan_data())
+        session = start_session(self.user, plan, 'Push')
+        for s in session.sets.all():
+            s.completed = True
+            s.save(update_fields=['completed'])
+        activity = training_activity(self.user)
+        flat = [d for week in activity['weeks'] for d in week]
+        today_cell = [d for d in flat if d['iso'] == timezone.localdate().isoformat()]
+        self.assertEqual(len(today_cell), 1)
+        self.assertGreaterEqual(today_cell[0]['level'], 1)
+        self.assertEqual(activity['streak'], 1)
+
+    def test_training_activity_streak_counts_consecutive_days(self):
+        from core.services import training_activity
+        from datetime import timedelta as _td
+        for offset in (0, 1, 2):
+            day = timezone.now() - _td(days=offset)
+            session = WorkoutSession.objects.create(user=self.user, name='S', started_at=day)
+            WorkoutSet.objects.create(
+                session=session, exercise=self.exercise, weight=60, reps=8,
+                set_type='working', completed=True,
+            )
+        activity = training_activity(self.user)
+        self.assertEqual(activity['streak'], 3)
+
+    def test_training_activity_ignores_incomplete_and_warmup(self):
+        from core.services import training_activity
+        session = WorkoutSession.objects.create(user=self.user, name='S')
+        WorkoutSet.objects.create(session=session, exercise=self.exercise, weight=60, reps=8, completed=False)
+        WorkoutSet.objects.create(session=session, exercise=self.exercise, weight=40, reps=8, set_type='warmup', completed=True)
+        activity = training_activity(self.user)
+        self.assertEqual(activity['streak'], 0)
+        today = timezone.localdate().isoformat()
+        self.assertFalse(any(d['level'] for w in activity['weeks'] for d in w if d['iso'] == today))
+
+    def test_training_activity_counts_completed_cardio(self):
+        # A cardio-only session is still a training day.
+        from core.services import training_activity
+        from core.models import WorkoutCardio
+        session = WorkoutSession.objects.create(user=self.user, name='Cardio day')
+        cardio_ex = Exercise.objects.create(user=self.user, name='Rowing', activity_type='cardio')
+        WorkoutCardio.objects.create(session=session, exercise=cardio_ex, minutes=25, completed=True)
+        activity = training_activity(self.user)
+        self.assertEqual(activity['streak'], 1)
+        today = timezone.localdate().isoformat()
+        today_cell = [d for w in activity['weeks'] for d in w if d['iso'] == today]
+        self.assertEqual(today_cell[0]['level'], 1)
+
+    # ── Personal records ────────────────────────────────────────────────
+
+    def test_personal_records_epley_best_and_top_sets(self):
+        from core.services import personal_records
+        session = WorkoutSession.objects.create(user=self.user, name='S')
+        WorkoutSet.objects.create(session=session, exercise=self.exercise, weight=100, reps=5, set_type='working', completed=True)
+        WorkoutSet.objects.create(session=session, exercise=self.exercise, weight=90, reps=8, set_type='working', completed=True)
+        WorkoutSet.objects.create(session=session, exercise=self.exercise, weight=140, reps=2, set_type='drop', completed=True)
+        WorkoutSet.objects.create(session=session, exercise=self.exercise, weight=40, reps=10, set_type='warmup', completed=True)
+        WorkoutSet.objects.create(session=session, exercise=self.exercise, weight=80, reps=3, set_type='working', completed=False)
+        records = personal_records(self.user)
+        self.assertEqual(len(records), 1)
+        r = records[0]
+        # 90×8 e1rm=114 > 100×5 e1rm=116.7? No: 100×5 = 116.7 wins.
+        self.assertEqual((r['weight'], r['reps']), (100, 5))
+        self.assertAlmostEqual(r['e1rm'], round(100 * (1 + 5 / 30), 1))
+        # Only completed working sets appear in the top list.
+        self.assertEqual(len(r['top_sets']), 2)
+
+    def test_is_personal_record_and_flash_on_complete(self):
+        from core.services import is_personal_record
+        session = WorkoutSession.objects.create(user=self.user, name='S')
+        WorkoutSet.objects.create(session=session, exercise=self.exercise, weight=80, reps=5, set_type='working', completed=True)
+        # New set completing above the old best is a PR.
+        new_set = WorkoutSet.objects.create(session=session, exercise=self.exercise, weight=100, reps=5, set_type='working')
+        self.assertTrue(is_personal_record(self.user, self.exercise.pk, 100, 5))
+        self.assertFalse(is_personal_record(self.user, self.exercise.pk, 80, 5))
+        response = self.client.post(f'/workouts/set/{new_set.pk}/complete/')
+        self.assertEqual(response.status_code, 302)
+        messages_list = list(get_messages(response.wsgi_request))
+        self.assertTrue(any('New PR' in str(m) for m in messages_list))
+
+    def test_prs_page_renders(self):
+        from core.services import personal_records
+        session = WorkoutSession.objects.create(user=self.user, name='S')
+        WorkoutSet.objects.create(session=session, exercise=self.exercise, weight=100, reps=5, set_type='working', completed=True)
+        response = self.client.get('/workouts/prs/')
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'Personal records')
+        self.assertContains(response, self.exercise.name)
+
+    def test_personal_records_progress_chart_points(self):
+        from core.services import personal_records
+        from datetime import timedelta as _td
+        session1 = WorkoutSession.objects.create(user=self.user, name='S1', started_at=timezone.now() - _td(days=14))
+        session2 = WorkoutSession.objects.create(user=self.user, name='S2', started_at=timezone.now() - _td(days=7))
+        WorkoutSet.objects.create(session=session1, exercise=self.exercise, weight=80, reps=5, set_type='working', completed=True)
+        WorkoutSet.objects.create(session=session2, exercise=self.exercise, weight=90, reps=5, set_type='working', completed=True)
+        records = personal_records(self.user)
+        r = records[0]
+        self.assertEqual(len(r['progress']), 2)
+        self.assertIn(',', r['chart'])
+        pts = r['chart'].split(' ')
+        self.assertEqual(len(pts), 2)
+        # Later heavier point must sit higher (smaller y) on the chart.
+        self.assertLess(int(pts[1].split(',')[1]), int(pts[0].split(',')[1]))
+
+    def test_prs_effort_strip_data(self):
+        from core.services import personal_records
+        session = WorkoutSession.objects.create(user=self.user, name='S')
+        WorkoutSet.objects.create(session=session, exercise=self.exercise, weight=100, reps=5, set_type='working', completed=True, rpe=8.5, rir=2)
+        records = personal_records(self.user)
+        self.assertEqual(len(records[0]['effort']), 1)
+        self.assertEqual(records[0]['effort'][0]['rpe'], 8.5)
+        self.assertEqual(records[0]['effort'][0]['rir'], 2.0)
+
+    def test_streak_freeze_on_planned_rest_days(self):
+        # Fixed plan resting on Sundays: a Sunday gap must not break the streak.
+        from core.services import training_activity
+        from core.models import WorkoutPlan
+        from datetime import datetime as _dt
+        today = timezone.localdate()
+        # Most recent Sunday, and the days around it that WERE trained.
+        sunday = today - timedelta(days=(today.weekday() + 1) % 7 or 7)
+        saturday = sunday - timedelta(days=1)
+        monday_after = sunday + timedelta(days=1)
+        WorkoutPlan.objects.create(
+            user=self.user, name='P', version=1, schedule_type='fixed',
+            schedule={str(i): 'Train' for i in range(6)} | {'6': 'Rest'},
+            exercises=[],
+        )
+        trained_days = [saturday, monday_after]
+        # Also train every day from monday_after up to yesterday so the
+        # streak is unbroken from saturday to now.
+        d = monday_after
+        while d < today:
+            trained_days.append(d)
+            d += timedelta(days=1)
+        for day in trained_days:
+            at = timezone.make_aware(_dt(day.year, day.month, day.day, 12, 0))
+            s = WorkoutSession.objects.create(user=self.user, name='S', started_at=at)
+            WorkoutSet.objects.create(session=s, exercise=self.exercise, weight=60, reps=8, set_type='working', completed=True)
+        activity = training_activity(self.user)
+        # Saturday trained, Sunday frozen, then every day after → streak
+        # counts the trained days.
+        expected = len(set(trained_days))
+        self.assertEqual(activity['streak'], expected)
+        sunday_cell = [d for w in activity['weeks'] for d in w if d['iso'] == sunday.isoformat()]
+        self.assertEqual(sunday_cell[0]['level'], 'rest')
+
+    def test_unplanned_gap_still_breaks_streak(self):
+        from core.services import training_activity
+        from datetime import datetime as _dt
+        today = timezone.localdate()
+        yesterday = today - timedelta(days=1)
+        three_days_ago = today - timedelta(days=3)  # gap at two days ago
+        for day in (yesterday, three_days_ago):
+            at = timezone.make_aware(_dt(day.year, day.month, day.day, 12, 0))
+            s = WorkoutSession.objects.create(user=self.user, name='S', started_at=at)
+            WorkoutSet.objects.create(session=s, exercise=self.exercise, weight=60, reps=8, set_type='working', completed=True)
+        activity = training_activity(self.user)
+        # The unplanned skip two days ago caps the streak at yesterday only.
+        self.assertEqual(activity['streak'], 1)
+
+    def test_body_tape_measurements_saved_and_charted(self):
+        from core.models import BodyMeasurement
+        # Advanced form now includes waist/arm/thigh; verify persistence + trends series.
+        response = self.client.post('/body/', data={
+            'advanced': '1',
+            'recorded_at': timezone.localtime().strftime('%Y-%m-%dT%H:%M'),
+            'source': 'manual', 'weight': '80',
+            'waist': '85.5', 'arm': '36', 'thigh': '58',
+        })
+        self.assertEqual(response.status_code, 302)
+        entry = BodyMeasurement.objects.filter(user=self.user, waist__isnull=False).first()
+        self.assertIsNotNone(entry)
+        self.assertEqual(float(entry.waist), 85.5)
+        self.assertEqual(float(entry.arm), 36.0)
+        self.assertEqual(float(entry.thigh), 58.0)
+        trends = self.client.get('/trends/?days=7')
+        self.assertEqual(trends.status_code, 200)
+        import json as _json
+        import re as _re
+        m = _re.search(r'id="chart-data"[^>]*>(.*?)</script>', trends.content.decode())
+        charts = _json.loads(m.group(1))
+        self.assertTrue(any('Waist' in k for k in charts))
+        self.assertTrue(any('Arm' in k for k in charts))
+        waist_key = next(k for k in charts if 'Waist' in k)
+        self.assertEqual(len(charts[waist_key]), 1)
+        self.assertEqual(charts[waist_key][0]['value'], 85.5)
+
+
+    def test_training_activity_counts_after_midnight_local(self):
+        # Regression: TruncDate defaulted to UTC, so a session logged at
+        # 00:30 Bangkok (= 17:30 UTC the previous day) landed on the wrong
+        # heatmap day. It must count as its LOCAL date.
+        from core.services import training_activity
+        from datetime import datetime as _dt
+        now = timezone.localtime()
+        # Yesterday 00:30 local — inside the grid, before-7am edge case.
+        yday = (now - timedelta(days=1)).replace(hour=0, minute=30, second=0, microsecond=0)
+        s = WorkoutSession.objects.create(user=self.user, name='Late', started_at=yday)
+        WorkoutSet.objects.create(session=s, exercise=self.exercise, weight=60, reps=8,
+                                  set_type='working', completed=True)
+        activity = training_activity(self.user, days=7)
+        iso = yday.date().isoformat()
+        cell = [d for w in activity['weeks'] for d in w if d['iso'] == iso]
+        self.assertTrue(cell and cell[0]['level'] in (1, 2, 3, 4),
+                        f"session on {iso} should light up (got {cell})")
+
+    def test_diary_shows_latest_job_status(self):
+        from coaching.models import Job
+        entry = FoodEntry.objects.create(user=self.user, name='Job meal', calories=0,
+                                         protein=0, carbs=0, fat=0, fiber=0)
+        Job.objects.create(user=self.user, task='food', status='failed',
+                           payload={'entry': str(entry.pk)}, dedupe='d1')
+        response = self.client.get('/nutrition/')
+        html = response.content.decode()
+        self.assertIn('AI failed', html)
+        self.assertIn('Retry analysis', html)
+        self.assertIn(f'/coach/retry/', html)
+
+    def test_set_edit_form_excludes_cardio_exercises(self):
+        # Strength set editor must only offer strength exercises.
+        plan = create_plan(self.user, self.plan_data())
+        session = start_session(self.user, plan, 'Push')
+        item = session.sets.first()
+        cardio_ex = Exercise.objects.create(user=self.user, name='Rowing', activity_type='cardio')
+        response = self.client.get(f'/workouts/set/{item.pk}/')
+        self.assertEqual(response.status_code, 200)
+        form = response.context['form']
+        offered = list(form.fields['exercise'].queryset.values_list('pk', flat=True))
+        self.assertNotIn(cardio_ex.pk, offered)
+        self.assertIn(self.exercise.pk, offered)

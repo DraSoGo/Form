@@ -1,0 +1,74 @@
+{% extends "core/base.html" %}
+{% block title %}Personal records · Form{% endblock %}
+{% block content %}
+<p class="eyebrow">Strength</p>
+<h1>Personal records</h1>
+<p class="muted">Best completed working set per exercise. Estimated 1RM uses the Epley formula.</p>
+
+{% if records %}
+<div class="pr-list">
+  {% for r in records %}
+  <details class="pr-item">
+    <summary class="pr-row" aria-expanded="false" aria-label="Show recent attempts for {{ r.exercise.name }}">
+      <span class="pr-id">
+        <strong class="pr-name">{{ r.exercise.name }}</strong>
+        <small class="pr-cat">{{ r.exercise.get_activity_type_display }}</small>
+      </span>
+      <span class="pr-best">
+        <small class="pr-label">Best set</small>
+        <strong class="pr-value">{{ r.weight|floatformat:"1g" }} kg × {{ r.reps }}</strong>
+      </span>
+      <span class="pr-est">
+        <small class="pr-label">Estimated 1RM</small>
+        <strong class="pr-value">{{ r.e1rm|floatformat:1 }} kg</strong>
+        <small class="pr-date">{{ r.date|date:"j M Y" }}</small>
+      </span>
+      <svg class="pr-chevron" viewBox="0 0 24 24" aria-hidden="true" fill="none"
+           stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="m9 18 6-6-6-6"/>
+      </svg>
+    </summary>
+    <div class="pr-history">
+      {% if r.chart %}
+      {% with first=r.progress|first last=r.progress|last %}
+      <svg class="chart pr-chart" viewBox="0 0 400 110" role="img"
+           aria-label="Estimated 1RM progress for {{ r.exercise.name }}">
+        <polyline fill="none" stroke="currentColor" stroke-width="3" points="{{ r.chart }}" />
+      </svg>
+      <p class="chart-labels muted">{{ first.date }} → {{ last.date }} · e1RM {{ first.e1rm|floatformat:1 }} → {{ last.e1rm|floatformat:1 }} kg</p>
+      {% endwith %}
+      {% endif %}
+      <p class="pr-history-title muted">Recent best attempts</p>
+      {% if r.effort %}
+      <div class="pr-effort" role="img" aria-label="Recent effort: RPE and RIR per session">
+        <span class="pr-effort-label muted">Effort</span>
+        {% for e in r.effort %}
+        <span class="effort-dot {% if e.rpe is None and e.rir is None %}none{% elif e.rpe and e.rpe >= 9 or e.rir is not None and e.rir <= 1 %}hard{% elif e.rpe and e.rpe >= 7.5 or e.rir is not None and e.rir <= 3 %}medium{% else %}light{% endif %}"
+              title="{{ e.date }} · {% if e.rpe is not None %}RPE {{ e.rpe|floatformat:1 }}{% endif %}{% if e.rpe is not None and e.rir is not None %} · {% endif %}{% if e.rir is not None %}RIR {{ e.rir|floatformat:1 }}{% endif %}">
+          {% if e.rpe is not None %}{{ e.rpe|floatformat:"1g" }}{% else %}·{% endif %}
+        </span>
+        {% endfor %}
+      </div>
+      <p class="muted pr-effort-hint">Latest sessions, hardest on the right scale: number = RPE (10 = maximal).</p>
+      {% endif %}
+      <div class="table-wrap">
+        <table>
+          <tr><th>Weight</th><th>Reps</th><th>Est. 1RM</th><th>Date</th></tr>
+          {% for s in r.top_sets %}
+          <tr>
+            <td>{{ s.weight|floatformat:"1g" }} kg</td>
+            <td>{{ s.reps }}</td>
+            <td>{{ s.e1rm|floatformat:1 }} kg</td>
+            <td>{{ s.date|date:"j M Y" }}</td>
+          </tr>
+          {% endfor %}
+        </table>
+      </div>
+    </div>
+  </details>
+  {% endfor %}
+</div>
+{% else %}
+<p class="muted">Complete working sets to set your first records.</p>
+{% endif %}
+{% endblock %}

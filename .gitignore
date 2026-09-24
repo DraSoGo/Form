@@ -12,3 +12,7 @@ staticfiles/
 .superpowers/
 test-results/
 playwright-report/
+
+# Local testing artifacts
+.playwright-mcp/
+note.yuna*

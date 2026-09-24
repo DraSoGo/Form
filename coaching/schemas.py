@@ -66,13 +66,6 @@ class FoodItem(Strict):
     user_confirmed: bool = False
     fraction_consumed: float = Field(default=1.0, ge=0, le=1)
 
-    @model_validator(mode='after')
-    def ref_key_known(self):
-        from core.nutrition_ref import REFERENCE
-        if self.ref_key not in REFERENCE:
-            raise ValueError(f"Unknown ref_key: {self.ref_key}")
-        return self
-
 
 class UnmatchedFood(Strict):
     name_th: str

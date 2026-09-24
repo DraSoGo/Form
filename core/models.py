@@ -98,6 +98,10 @@ class BodyMeasurement(Owned):
     body_age = optional(150)
     bmr = optional(10000)
     bmi = optional(150)
+    # Tape measurements (cm) — optional, additive columns.
+    waist = optional(300)
+    arm = optional(300)
+    thigh = optional(300)
 
     class Meta:
         ordering = ["-recorded_at"]

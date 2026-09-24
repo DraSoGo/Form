@@ -1,6 +1,7 @@
 [Unit]
 Description=Fitness isolated restore verification
 After=docker.service network-online.target
+OnFailure=fitness-backup-failed.service
 
 [Service]
 Type=oneshot

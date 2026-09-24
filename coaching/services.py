@@ -40,9 +40,21 @@ def food_snapshot(entry):
     values={k:str(Decimal(str(getattr(entry,k))).normalize()) if k in nutrients and getattr(entry,k) is not None else str(getattr(entry,k)) for k in fields}
     return hashlib.sha256(json.dumps(values,sort_keys=True).encode()).hexdigest()
 
-def enqueue_food(user,entry):
-    if not entry.image: raise ValidationError('This entry has no retained photograph.')
-    return enqueue(user,'food',{'entry':str(entry.pk),'snapshot':food_snapshot(entry)})
+def enqueue_food(user,entry,reestimate=False):
+    if not entry.image and not reestimate: raise ValidationError('This entry has no retained photograph.')
+    # A previous food job still waiting would run against a stale snapshot
+    # and die with food_changed_review_required; replace it instead.
+    Job.objects.filter(user=user,task='food',status__in=('pending','running'),payload__entry=str(entry.pk)).delete()
+    payload={'entry':str(entry.pk)}
+    if reestimate:
+        # User-confirmed components ride along: the AI must keep them fixed
+        # and only estimate the remaining unmatched parts. The breakdown is
+        # re-read when the job runs, so saving between enqueue and run is
+        # fine (the old snapshot made these jobs die instantly).
+        payload['reestimate']=True
+    else:
+        payload['snapshot']=food_snapshot(entry)
+    return enqueue(user,'food',payload)
 
 def exercise_snapshot(exercise):
     fields=('name','activity_type','equipment','aliases','primary_muscles','secondary_muscles','classification')
@@ -80,6 +92,17 @@ def _food_prompt(note):
 def _resolve_estimate(result):
     """Convert a V3 route result into computed meal data and validation flags."""
     estimate = NutritionEstimateV3.model_validate(result)
+    from core.nutrition_ref import REFERENCE
+    # The AI sometimes invents plausible ref_keys absent from the curated
+    # table (e.g. cooked_noodles vs egg_noodles). Dropping the whole
+    # response over one key wasted every other correct item; instead the
+    # item becomes unmatched and the user fixes it in the breakdown UI.
+    kept, demoted = [], []
+    for item in estimate.items:
+        if item.ref_key in REFERENCE:
+            kept.append(item)
+        else:
+            demoted.append(item)
     items = [
         {
             "ref_key": item.ref_key,
@@ -90,12 +113,23 @@ def _resolve_estimate(result):
             "fraction_consumed": item.fraction_consumed,
             "user_confirmed": item.user_confirmed,
         }
-        for item in estimate.items
+        for item in kept
     ]
     unmatched = [
         {"name_th": u.name_th, "estimated_share": u.estimated_share, "note": u.note}
         for u in estimate.unmatched
     ]
+    for item in demoted:
+        unmatched.append({
+            "name_th": item.name_th or item.ref_key,
+            "estimated_share": "major" if item.weight_g >= 40 else "minor",
+            "note": f"ไม่มีในตารางอ้างอิง (ref_key: {item.ref_key}) — เพิ่มเป็นส่วนประกอบเองได้",
+        })
+    # All ref_keys unknown → items may be empty; the meal is still valid,
+    # just fully unmatched (INCOMPLETE) so the user can fix it in the UI.
+    # (Raising here used to kill note-only analyses of dishes absent from
+    # the reference table — e.g. ข้าวผัดกุ้ง — before the correction loop
+    # or the user ever saw a result.)
     computed = compute_meal(
         items,
         dish_name=estimate.dish_name_th,
@@ -160,15 +194,29 @@ def run_job(job):
         if job.task=='body': prompt=json.dumps(job.payload.get('triggers',[]))
         if job.task=='food':
             entry=m.FoodEntry.objects.get(pk=job.payload['entry'],user=job.user)
-            if not entry.image: raise ProviderError('image_expired',False)
-            from PIL import Image
-            from io import BytesIO
-            from django.conf import settings
-            from pathlib import Path
-            with (Path(settings.MEDIA_ROOT)/Path(entry.image).name).open('rb') as photo:
-                im=Image.open(photo);im.thumbnail((1600,1600));buf=BytesIO();im.convert('RGB').save(buf,format='JPEG',quality=85)
-                image=('image/jpeg',buf.getvalue())
-            prompt=_food_prompt(entry.note[:2000])
+            reestimate=job.payload.get('reestimate')
+            if not entry.image and not reestimate: raise ProviderError('image_expired',False)
+            if entry.image:
+                from PIL import Image
+                from io import BytesIO
+                from django.conf import settings
+                from pathlib import Path
+                with (Path(settings.MEDIA_ROOT)/Path(entry.image).name).open('rb') as photo:
+                    im=Image.open(photo);im.thumbnail((1600,1600));buf=BytesIO();im.convert('RGB').save(buf,format='JPEG',quality=85)
+                    image=('image/jpeg',buf.getvalue())
+            if reestimate:
+                # Read the CURRENT breakdown at run time — the user may have
+                # saved edits between clicking the button and this job run.
+                confirmed=[i for i in (entry.ai_breakdown or {}).get('items',[]) if i.get('weight_g')]
+                lines=[f"- {i.get('name_th') or i.get('ref_key')}: {i.get('weight_g')}g" for i in confirmed]
+                prompt=(
+                    _food_prompt((entry.name + ' ' + entry.note)[:2000])
+                    + "\n\nThe user has CONFIRMED these components at these exact weights — keep each one with user_confirmed=true and its exact weight:\n"
+                    + ("\n".join(lines) or "(none yet)")
+                    + "\nEstimate ONLY the remaining components. Never change confirmed weights. If a confirmed component has no reference key, keep it in items with ref_key 'custom' and leave nutrient values unset."
+                )
+            else:
+                prompt=_food_prompt((entry.name + ' ' + entry.note)[:2000])
             context=build_context(job.user,'food',day,query=entry.name+' '+entry.note)
         if job.task=='exercise':
             exercise=m.Exercise.objects.get(pk=job.payload['exercise'],user=job.user)
@@ -187,7 +235,7 @@ def run_job(job):
         if job.task == 'food':
             food_estimate, food_computed, validation_flags = _resolve_estimate(result)
             if validation_flags:
-                correction_prompt = _food_prompt(entry.note[:2000]) + "\n\nCorrection needed:\n" + "\n".join(validation_flags)
+                correction_prompt = _food_prompt((entry.name + ' ' + entry.note)[:2000]) + "\n\nCorrection needed:\n" + "\n".join(validation_flags)
                 result, provider, model = route('food', context, correction_prompt, image, job=job)
                 food_estimate, food_computed, validation_flags = _resolve_estimate(result)
                 if validation_flags:
@@ -200,7 +248,10 @@ def run_job(job):
             if locked.status!='running' or locked.attempts!=job.attempts: return
             if job.task=='food':
                 entry=m.FoodEntry.objects.select_for_update().get(pk=job.payload['entry'],user=job.user)
-                if food_snapshot(entry)!=job.payload['snapshot']: raise ProviderError('food_changed_review_required',False)
+                # Re-estimate jobs read the breakdown at run time, so there
+                # is no snapshot to guard; plain analyses still protect
+                # against overwriting user corrections made after enqueue.
+                if not reestimate and food_snapshot(entry)!=job.payload.get('snapshot'): raise ProviderError('food_changed_review_required',False)
 
                 totals = food_computed['totals']
                 range_kcal = food_computed['range_kcal']
@@ -208,13 +259,19 @@ def run_job(job):
                 complete = food_computed['complete']
 
                 # Only overwrite entry nutrient fields when the user has not manually corrected/confirmed them.
-                if entry.state in ('manual', 'ai_estimated'):
+                # Re-estimate jobs are an explicit user request for fresh
+                # numbers, so they overwrite even confirmed/corrected
+                # entries; plain analyses still respect manual corrections.
+                if entry.state in ('manual', 'ai_estimated') or reestimate:
                     from decimal import Decimal
                     for src, dst in [('kcal','calories'),('protein','protein'),('carbs','carbs'),('fat','fat'),('fiber','fiber'),('sugar','sugar'),('sodium','sodium')]:
                         value = totals.get(src)
-                        if value is not None:
-                            value = Decimal(str(round(float(value), 2)))
-                        setattr(entry, dst, value)
+                        if value is None:
+                            # Fully unmatched meal: keep the previous value
+                            # instead of writing NULL into NOT NULL columns
+                            # (full_clean used to reject the whole save).
+                            continue
+                        setattr(entry, dst, Decimal(str(round(float(value), 2))))
                     entry.name = food_estimate.dish_name_th[:160]
                     item_desc = '; '.join(
                         f"{item.name_th or item.ref_key} {item.weight_g:.0f}g"

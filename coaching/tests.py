@@ -8,7 +8,7 @@ from unittest.mock import patch
 import httpx
 from django.contrib.auth import get_user_model
 from django.core.exceptions import ValidationError
-from django.test import TestCase,SimpleTestCase,override_settings
+from django.test import TestCase,SimpleTestCase,Client,override_settings
 from django.utils import timezone
 from pydantic import ValidationError as SchemaError
 from core.models import Profile,FoodEntry,BodyMeasurement,SleepEntry,NutritionTarget,Exercise
@@ -54,16 +54,53 @@ class CoachingTests(TestCase):
         with self.assertRaises(ProviderError): route('daily',{})
         self.assertEqual(mock.call_count,1)
     @patch('coaching.router.complete')
-    def test_schema_failure_stops_without_persisting_analysis(self,mock):
+    def test_schema_failure_fails_over_to_next_candidate(self,mock):
+        self.candidates();mock.side_effect=['{"summary":"bad","execute_sql":"DELETE"}',json.dumps(SUMMARY)]
+        result,provider,model=route('daily',{})
+        self.assertEqual(provider,'gpt');self.assertEqual(mock.call_count,2)
+        self.assertEqual(result,SUMMARY)
+        self.assertEqual(list(RequestAttempt.objects.order_by('sequence').values_list('status',flat=True)),['invalid_structured_response','success'])
+        self.assertEqual(Analysis.objects.count(),0)
+    @patch('coaching.router.complete')
+    def test_schema_failure_on_all_candidates_fails_without_persisting_analysis(self,mock):
         self.candidates();mock.return_value='{"summary":"bad","execute_sql":"DELETE"}'
         with self.assertRaises(ProviderError) as caught: route('daily',{})
-        self.assertEqual(caught.exception.code,'invalid_structured_response');self.assertEqual(mock.call_count,1)
+        self.assertEqual(caught.exception.code,'invalid_structured_response');self.assertEqual(mock.call_count,3)
         self.assertEqual(Analysis.objects.count(),0)
+    @patch('coaching.router.complete')
+    def test_transient_error_retries_first_candidate_in_single_model_pool(self,mock):
+        # A single-candidate pool must still use its full attempt budget
+        # when the gateway hiccups (empty output / network faults).
+        candidate=ProviderModel.objects.create(provider='gpt',model='solo',text_verified=True)
+        TaskRoute.objects.create(task='daily',candidate=candidate,priority=0)
+        mock.side_effect=[ProviderError('empty_response'),json.dumps(SUMMARY)]
+        result,provider,model=route('daily',{})
+        self.assertEqual(provider,'gpt');self.assertEqual(mock.call_count,2)
+        self.assertEqual(result,SUMMARY)
+        self.assertEqual(list(RequestAttempt.objects.order_by('sequence').values_list('status',flat=True)),['empty_response','success'])
+    @patch('coaching.router.complete')
+    def test_non_transient_error_stops_at_pool_size(self,mock):
+        candidate=ProviderModel.objects.create(provider='gpt',model='solo2',text_verified=True)
+        TaskRoute.objects.create(task='daily',candidate=candidate,priority=0)
+        mock.side_effect=ProviderError('invalid_request',False)
+        with self.assertRaises(ProviderError): route('daily',{})
+        self.assertEqual(mock.call_count,1)
     @patch('coaching.router.complete')
     def test_vision_needs_verification(self,mock):
         self.candidates('food')
         with self.assertRaises(ProviderError): route('food',{},image=('image/png',b'test'))
         mock.assert_not_called()
+    @patch('coaching.router.complete')
+    def test_food_note_only_runs_text_models_without_image(self,mock):
+        # F6: no photo — note-only food jobs may use text-verified models.
+        candidate=ProviderModel.objects.create(provider='gpt',model='text-only-test',text_verified=True)
+        TaskRoute.objects.create(task='food',candidate=candidate,priority=0)
+        mock.return_value=json.dumps(FOOD)
+        result,provider,model=route('food',{},image=None)
+        self.assertEqual(provider,'gpt')
+        # The image part of the call must be None.
+        self.assertIsNone(mock.call_args.kwargs.get('image'))
+        self.assertEqual(result['dish_name_th'],FOOD['dish_name_th'])
     def test_context_is_bounded_same_source_and_sleep(self):
         for i in range(25): FoodEntry.objects.create(user=self.user,name='food',calories=100,protein=5)
         BodyMeasurement.objects.create(user=self.user,weight=70,source='manual')
@@ -225,6 +262,23 @@ class CoachingTests(TestCase):
                 run_job(claim_job())
         entry.refresh_from_db()
         return entry
+
+    def test_unknown_ref_key_demotes_to_unmatched(self):
+        # A model inventing a plausible ref_key absent from the table must
+        # not waste the whole response: the item becomes unmatched instead.
+        entry = FoodEntry.objects.create(user=self.user, name='Photo', note='บะหมี่ผัด')
+        result = self._food_v3([
+            {'ref_key': 'cooked_noodles', 'name_th': 'บะหมี่ผัดสุก', 'weight_g': 180, 'min_g': 140, 'max_g': 230, 'user_confirmed': False},
+            {'ref_key': 'chicken_breast_cooked', 'name_th': 'ไก่ปรุงสุก', 'weight_g': 90, 'min_g': 70, 'max_g': 110, 'user_confirmed': False},
+        ])
+        entry = self._run_food_job(entry, result)
+        self.assertEqual(entry.state, 'ai_estimated')
+        ref_keys = [i['ref_key'] for i in entry.ai_breakdown['items']]
+        self.assertNotIn('cooked_noodles', ref_keys)
+        self.assertIn('chicken_breast_cooked', ref_keys)
+        names = [u['name_th'] for u in entry.ai_breakdown['unmatched']]
+        self.assertIn('บะหมี่ผัดสุก', names)
+        self.assertGreater(float(entry.calories), 0)
 
     def test_fried_chicken_sticky_rice_breakdown(self):
         entry = FoodEntry.objects.create(user=self.user, name='Photo', note='ข้าวเหนียวไก่ทอด')
@@ -418,9 +472,16 @@ class CoachingTests(TestCase):
 
     def test_historical_analysis_preserved(self):
         from PIL import Image
+        from core.models import Profile as _Profile
+        from .context import local_now
         entry = FoodEntry.objects.create(user=self.user, name='Photo', note='ข้าว')
         old_job = Job.objects.create(user=self.user, task='food', status='done', payload={'entry': str(entry.pk)})
-        Analysis.objects.create(user=self.user, job=old_job, task='food', local_date=timezone.now().date(), version=1, content={'old': True})
+        # Seed on the user's LOCAL date — run_job allocates Analysis
+        # versions per local_date, so a UTC date diverges between
+        # 00:00–07:00 Asia/Bangkok and the versions restart at 1.
+        _Profile.objects.get_or_create(user=self.user)
+        seed_date = local_now(self.user).date()
+        Analysis.objects.create(user=self.user, job=old_job, task='food', local_date=seed_date, version=1, content={'old': True})
         result = self._food_v3([
             {'ref_key': 'cooked_white_rice', 'name_th': 'ข้าวสวย', 'weight_g': 150, 'min_g': 150, 'max_g': 150, 'user_confirmed': True},
         ])
@@ -563,3 +624,138 @@ class CompatibilityTests(TestCase):
             client.return_value.__enter__.return_value.request.return_value=httpx.Response(400,json={'error':{'code':code,'message':'sensitive never logged'}})
             with self.assertRaises(ProviderError) as caught: request(p,'/models')
             self.assertEqual(caught.exception.code,expected);self.assertEqual(caught.exception.failover,retryable)
+
+class FoodReestimateTests(TestCase):
+    """F2: Re-estimate with AI — user-confirmed weights ride along, and the
+    result may overwrite a confirmed entry (explicit user request)."""
+    password='test-owner-long-password'
+    def setUp(self):
+        self.user=get_user_model().objects.create_user('owner2',password=self.password)
+        self.client.force_login(self.user)
+        Profile.objects.create(user=self.user,summary_time=time(21))
+    @patch('coaching.services.route')
+    def test_reestimate_prompt_carries_confirmed_weights(self,mock):
+        from coaching.services import enqueue_food,claim_job,run_job
+        entry=FoodEntry.objects.create(
+            user=self.user,name='Rice bowl',state='user_corrected',
+            ai_breakdown={'schema':2,'items':[
+                {'name_th':'ข้าวสวย','ref_key':'cooked_white_rice','weight_g':180,'user_confirmed':True},
+                {'name_th':'หมูทอด','ref_key':'custom','weight_g':100,'user_confirmed':False},
+            ],'unmatched':[]},
+        )
+        mock.return_value=(FOOD,'claude','vision-test')
+        enqueue_food(self.user,entry,reestimate=True)
+        job=claim_job()
+        self.assertTrue(job.payload.get('reestimate'))
+        run_job(job)
+        prompt=mock.call_args.args[2]
+        self.assertIn('CONFIRMED these components',prompt)
+        self.assertIn('ข้าวสวย: 180g',prompt)
+        # Overwrites the corrected entry (explicit request), state stays ai_estimated.
+        entry.refresh_from_db()
+        self.assertEqual(entry.state,'ai_estimated')
+    @patch('coaching.services.route')
+    def test_note_only_food_job_runs_without_photo(self,mock):
+        # F6: a photo-less entry with a Thai note is analyzable.
+        from coaching.services import enqueue_food,claim_job,run_job
+        entry=FoodEntry.objects.create(user=self.user,name='Note meal',note='ข้าว 1 จาน หมูทอด 100g ไข่ต้ม 2 ฟอง')
+        mock.return_value=(FOOD,'gpt','text-test')
+        enqueue_food(self.user,entry,reestimate=True)
+        job=claim_job();run_job(job);entry.refresh_from_db()
+        self.assertEqual(entry.state,'ai_estimated')
+        # No image was attached to the AI call.
+        self.assertIsNone(mock.call_args.kwargs.get('image'))
+    def test_enqueue_food_still_requires_photo_for_plain_analysis(self):
+        from coaching.services import enqueue_food
+        entry=FoodEntry.objects.create(user=self.user,name='No photo')
+        with self.assertRaises(ValidationError):
+            enqueue_food(self.user,entry)
+
+class NoteOnlyAllUnknownRefsTests(TestCase):
+    """Regression: an AI answer whose ref_keys are ALL absent from the
+    reference table (e.g. a dish the table simply lacks) must save as an
+    incomplete meal for the user to fix — not fail the job."""
+    password='test-owner-long-password'
+    def setUp(self):
+        self.user=get_user_model().objects.create_user('owner3',password=self.password)
+        Profile.objects.create(user=self.user,summary_time=time(21))
+    @patch('coaching.services.route')
+    def test_all_unknown_ref_keys_saves_incomplete_not_failed(self,mock):
+        from coaching.services import enqueue_food,claim_job,run_job
+        result=self._food_v3([
+            {'ref_key':'shrimp_fried_rice','name_th':'ข้าวผัดกุ้ง','weight_g':350,'min_g':300,'max_g':400,'user_confirmed':False},
+            {'ref_key':'fried_egg_sunny_side_up','name_th':'ไข่ดาว','weight_g':50,'min_g':40,'max_g':60,'user_confirmed':False},
+        ]) if hasattr(self,'_food_v3') else None
+        entry=FoodEntry.objects.create(user=self.user,name='ข้าวผัดกุ้ง',note='ข้าวผัดกุ้ง 1 จาน ไข่ดาว 1 ฟอง')
+        mock.return_value=(
+            {'dish_name_th':'ข้าวผัดกุ้งใส่ไข่ดาว','cuisine':'ไทย','strategy':'whole_dish',
+             'items':[
+                {'ref_key':'shrimp_fried_rice','name_th':'ข้าวผัดกุ้ง','weight_g':350,'min_g':300,'max_g':400,'user_confirmed':False,'fraction_consumed':1.0},
+                {'ref_key':'fried_egg_sunny_side_up','name_th':'ไข่ดาว','weight_g':50,'min_g':40,'max_g':60,'user_confirmed':False,'fraction_consumed':1.0},
+             ],
+             'unmatched':[],'confidence':'medium','completeness':'complete','uncertainty_factors_thai':[]},
+            'gpt','text-test')
+        enqueue_food(self.user,entry,reestimate=True)
+        job=claim_job();run_job(job)
+        job.refresh_from_db();entry.refresh_from_db()
+        self.assertEqual(job.status,'done')
+        self.assertEqual(entry.state,'ai_estimated')
+        names=[u['name_th'] for u in entry.ai_breakdown['unmatched']]
+        self.assertIn('ข้าวผัดกุ้ง',names)
+        self.assertIn('ไข่ดาว',names)
+        self.assertEqual(entry.ai_breakdown['items'],[])
+        self.assertEqual(entry.ai_breakdown['completeness'],'incomplete')
+
+class PushOwnershipTests(TestCase):
+    """A globally-unique push endpoint owned by another user must not be
+    silently taken over by a subscribe call from a different account."""
+    def test_endpoint_takeover_rejected(self):
+        from coaching.models import PushSubscription
+        owner = get_user_model().objects.create_user('push-owner', password='x'*12)
+        other = get_user_model().objects.create_user('push-other', password='x'*12)
+        PushSubscription.objects.create(user=owner, endpoint='https://fcm.googleapis.com/fcm/send/abc', keys={'p256dh': 'a2tra2tra2tra2tra2tra2tra2tra2tra2tra2tra2tra2tra2tra2tra2tra2tra2tra2tra2tra2tra2tra2s', 'auth': 'YWFhYWFhYWFhYWFhYWFhYQ'})
+        c = Client()
+        c.force_login(other)
+        payload = {'endpoint': 'https://fcm.googleapis.com/fcm/send/abc',
+                   'keys': {'p256dh': 'bm5ubm5ubm5ubm5ubm5ubm5ubm5ubm5ubm5ubm5ubm5ubm5ubm5ubm5ubm5ubm5ubm5ubm5ubm5ubm5ubm5ubm4', 'auth': 'bm5ubm5ubm5ubm5ubm5ubg'}}
+        response = c.post('/coach/push/', data=json.dumps(payload), content_type='application/json')
+        self.assertEqual(response.status_code, 400)
+        sub = PushSubscription.objects.get(endpoint='https://fcm.googleapis.com/fcm/send/abc')
+        self.assertEqual(sub.user_id, owner.pk)          # ownership unchanged
+        self.assertEqual(sub.keys, {'p256dh': 'a2tra2tra2tra2tra2tra2tra2tra2tra2tra2tra2tra2tra2tra2tra2tra2tra2tra2tra2tra2tra2tra2s', 'auth': 'YWFhYWFhYWFhYWFhYWFhYQ'})  # keys unchanged
+    def test_own_endpoint_still_updates(self):
+        from coaching.models import PushSubscription
+        owner = get_user_model().objects.create_user('push-owner2', password='x'*12)
+        PushSubscription.objects.create(user=owner, endpoint='https://fcm.googleapis.com/fcm/send/xyz', keys={'p256dh': 'b29vb29vb29vb29vb29vb29vb29vb29vb29vb29vb29vb29vb29vb29vb29vb29vb29vb29vb29vb29vb29vb28', 'auth': 'b29vb29vb29vb29vb29vbw'})
+        c = Client()
+        c.force_login(owner)
+        payload = {'endpoint': 'https://fcm.googleapis.com/fcm/send/xyz',
+                   'keys': {'p256dh': 'bm5ubm5ubm5ubm5ubm5ubm5ubm5ubm5ubm5ubm5ubm5ubm5ubm5ubm5ubm5ubm5ubm5ubm5ubm5ubm5ubm5ubm4', 'auth': 'bm5ubm5ubm5ubm5ubm5ubg'}}
+        response = c.post('/coach/push/', data=json.dumps(payload), content_type='application/json')
+        self.assertEqual(response.status_code, 200)
+        sub = PushSubscription.objects.get(endpoint='https://fcm.googleapis.com/fcm/send/xyz')
+        self.assertEqual(sub.keys, {'p256dh': 'bm5ubm5ubm5ubm5ubm5ubm5ubm5ubm5ubm5ubm5ubm5ubm5ubm5ubm5ubm5ubm5ubm5ubm5ubm5ubm5ubm5ubm4', 'auth': 'bm5ubm5ubm5ubm5ubm5ubg'})
+
+class OwnerGateTests(TestCase):
+    """Only the first-created account (the bootstrap owner) may manage AI
+    provider discovery/testing/routing — these spend credit globally."""
+    def test_non_owner_cannot_open_settings(self):
+        get_user_model().objects.create_user('first', password='x'*12)
+        second = get_user_model().objects.create_user('second', password='x'*12)
+        c = Client(); c.force_login(second)
+        r = c.get('/coach/settings/')
+        self.assertEqual(r.status_code, 302)
+        self.assertEqual(r.url, '/coach/')
+    def test_owner_can_open_settings(self):
+        owner = get_user_model().objects.create_user('first', password='x'*12)
+        c = Client(); c.force_login(owner)
+        r = c.get('/coach/settings/')
+        self.assertEqual(r.status_code, 200)
+    def test_non_owner_post_is_rejected(self):
+        get_user_model().objects.create_user('first', password='x'*12)
+        second = get_user_model().objects.create_user('second', password='x'*12)
+        c = Client(); c.force_login(second)
+        r = c.post('/coach/settings/', data={'action': 'discover', 'provider': 'gpt'})
+        self.assertEqual(r.status_code, 302)
+        # No discovery side effect: no model rows created.
+        self.assertEqual(ProviderModel.objects.count(), 0)

@@ -126,7 +126,7 @@
             <form method="post" action="/delete/body/{{ m.pk }}/" style="margin:0">
               {% csrf_token %}
               <button class="secondary" type="submit"
-                      onclick="return confirm('Delete this measurement?')">Delete</button>
+                      data-confirm="Delete this measurement?">Delete</button>
             </form>
           </div>
         </div>

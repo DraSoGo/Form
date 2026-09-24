@@ -9,7 +9,16 @@
   <img class="food-photo" src="/photos/{{ entry.pk }}/" alt="Your food photograph">
   <div class="actions">
     <form method="post" action="/coach/food/{{ entry.pk }}/">{% csrf_token %}<button>Analyze photo</button></form>
+    <form method="post" action="/coach/food/{{ entry.pk }}/">{% csrf_token %}<input type="hidden" name="reestimate" value="1"><button class="secondary">Re-estimate with AI</button></form>
     <form method="post" action="/photos/{{ entry.pk }}/delete/">{% csrf_token %}<button class="secondary">Delete photo, keep entry</button></form>
+  </div>
+  {% if entry.uncertainty %}<p class="muted">{{ entry.uncertainty }}</p>{% endif %}
+</section>
+{% elif entry %}
+<section class="card">
+  <div class="actions">
+    {# Note-only analysis: no photo needed — the AI parses the note text. #}
+    <form method="post" action="/coach/food/{{ entry.pk }}/">{% csrf_token %}<input type="hidden" name="reestimate" value="1"><button>Estimate from note with AI</button></form>
   </div>
   {% if entry.uncertainty %}<p class="muted">{{ entry.uncertainty }}</p>{% endif %}
 </section>
@@ -69,19 +78,15 @@
   <div class="actions">
     <button>Save food</button>
     <a href="/nutrition/">Back to diary</a>
-    {% if entry %}<a class="secondary button" href="/nutrition/"
-      onclick="return confirm('Delete this food entry? This cannot be undone.') && deleteFood()">Delete entry</a>{% endif %}
+    {# Delete submits through the separate top-level form via the form= attribute — CSP blocks inline onclick/script. #}
+    {% if entry %}<button class="secondary" type="submit"
+      form="delete-food-{{ entry.pk }}"
+      data-confirm="Delete this food entry? This cannot be undone.">Delete entry</button>{% endif %}
   </div>
 </form>
 
 {% if entry %}
   {# Delete posts through this separate top-level form with its own CSRF token. #}
   <form id="delete-food-{{ entry.pk }}" method="post" action="/delete/food/{{ entry.pk }}/">{% csrf_token %}</form>
-  <script>
-  function deleteFood() {
-    document.getElementById('delete-food-{{ entry.pk }}').submit();
-    return false;
-  }
-  </script>
 {% endif %}
 {% endblock %}

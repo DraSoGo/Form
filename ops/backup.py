@@ -10,6 +10,7 @@ from pathlib import Path
 import re
 import shutil
 import signal
+import sys
 import subprocess
 import tempfile
 import uuid
@@ -30,17 +31,35 @@ def run(args, **kwargs):
 
 
 def deployed_revision():
+    """Best-effort deployment revision for the backup manifest.
+
+    The revision is metadata only: a git failure (e.g. the systemd unit
+    runs as root while the repo is owned by the deploy user, triggering
+    git's dubious-ownership refusal) must never abort the whole backup —
+    the database and media still need to be archived. Fallbacks:
+    .revision marker → git → FITNESS_IMAGE_TAG from .env → 'unknown'.
+    """
     marker = APP / '.revision'
     if marker.is_file():
         value = marker.read_text().strip()
-        if not REVISION.fullmatch(value):
-            raise RuntimeError('Invalid deployment revision marker')
-        return value
-    result = run(['git', '-C', str(APP), 'rev-parse', 'HEAD'], stdout=subprocess.PIPE)
-    value = result.stdout.decode().strip()
-    if not REVISION.fullmatch(value):
-        raise RuntimeError('Invalid Git revision')
-    return value
+        if REVISION.fullmatch(value):
+            return value
+    try:
+        result = run(['git', '-C', str(APP), 'rev-parse', 'HEAD'], stdout=subprocess.PIPE)
+        value = result.stdout.decode().strip()
+        if REVISION.fullmatch(value):
+            return value
+    except (subprocess.CalledProcessError, OSError) as exc:
+        print(f'warning: git revision unavailable ({exc}); falling back', file=sys.stderr)
+    env_file = APP / '.env'
+    if env_file.is_file():
+        for line in env_file.read_text().splitlines():
+            if line.startswith('FITNESS_IMAGE_TAG='):
+                value = line.split('=', 1)[1].strip()
+                if REVISION.fullmatch(value):
+                    return value
+    print('warning: deployment revision unknown for this backup', file=sys.stderr)
+    return 'unknown'
 
 
 def db(args, **kwargs):
@@ -172,6 +191,13 @@ def backup():
     stamp = dt.datetime.now(dt.timezone.utc).strftime('%Y%m%dT%H%M%SZ') + '-' + uuid.uuid4().hex[:8]
     path = ROOT / 'snapshots' / ('.partial-' + stamp)
     path.mkdir()
+    # Sweep snapshot directories abandoned by failed runs (crash, OOM,
+    # interrupted service): they otherwise accumulate forever and are
+    # never valid snapshots (no rename to the published name happened).
+    for stale in (ROOT / 'snapshots').glob('.partial-*'):
+        if stale != path and stale.is_dir():
+            shutil.rmtree(stale, ignore_errors=True)
+            print(f'warning: removed abandoned snapshot directory {stale.name}', file=sys.stderr)
     # Freeze media mutations across DB dump/media copy, then always resume.
     compose = ['docker', 'compose', '--project-directory', str(APP)]
     running = run(compose + ['ps', '--status', 'running', '--services'], stdout=subprocess.PIPE).stdout.decode().splitlines()
@@ -205,7 +231,15 @@ def backup():
         atomic_json(path / 'manifest.json', {'format': 2, 'created': stamp, 'media': media, 'database': expected_database})
     finally:
         if stopped:
-            run(compose + ['start', *stopped])
+            try:
+                run(compose + ['start', *stopped])
+            except Exception as start_exc:
+                # Production services staying DOWN is worse than the backup
+                # failure itself: make it loud, keep the original error.
+                print(f'CRITICAL: backup failed AND services could not restart '
+                      f'({start_exc}); manual `docker compose start web worker` needed',
+                      file=sys.stderr)
+                raise
     revision = deployed_revision()
     config = {'revision': revision, 'files': {name: (APP / name).read_text() for name in ['compose.yaml', '.env.example', 'Dockerfile', 'requirements.txt', 'requirements.lock']}}
     atomic_json(path / 'config.json', config)
@@ -246,6 +280,30 @@ def restore_test(path):
             sql('DROP DATABASE ' + temporary_db + ' WITH (FORCE);')
 
 
+def notify_push(status, message):
+    """Best-effort Uptime Kuma push heartbeat (opt-in via KUMA_PUSH_URL
+    in the environment or secrets/runtime.env). A failed backup must not
+    stay silent for days again; network errors here never break the run."""
+    url = os.environ.get('KUMA_PUSH_URL')
+    if not url:
+        env_file = APP / 'secrets/runtime.env'
+        if env_file.is_file():
+            for line in env_file.read_text().splitlines():
+                if line.startswith('KUMA_PUSH_URL='):
+                    url = line.split('=', 1)[1].strip()
+                    break
+    if not url:
+        return
+    try:
+        import urllib.parse
+        import urllib.request
+        separator = '&' if '?' in url else '?'
+        params = urllib.parse.urlencode({'status': status, 'msg': message[:400], 'ping': ''})
+        urllib.request.urlopen(f'{url}{separator}{params}', timeout=10)
+    except Exception as exc:
+        print(f'warning: kuma push failed ({exc})', file=sys.stderr)
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('command', choices=['backup', 'verify', 'restore-test', 'prune'])
@@ -275,8 +333,10 @@ def main():
             result['at'] = dt.datetime.now(dt.timezone.utc).isoformat()
             record_status(result)
             print(json.dumps(result, sort_keys=True))
+            notify_push('up', result['status'])
         except Exception as exc:
             record_status({'status': 'failed', 'command': args.command, 'at': dt.datetime.now(dt.timezone.utc).isoformat(), 'error_type': type(exc).__name__})
+            notify_push('down', f'{args.command} failed: {type(exc).__name__}')
             raise
 
 

@@ -2,12 +2,14 @@ import io, uuid
 from datetime import timedelta
 from decimal import Decimal
 from pathlib import Path
+from types import SimpleNamespace
 from PIL import Image, UnidentifiedImageError
 from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.core.exceptions import ValidationError
 from django.db import transaction
-from django.db.models import Sum
+from django.db.models import Count, F, FloatField, Max, Sum, Value
+from django.db.models import functions as db_functions
 from django.utils import timezone
 from .models import *
 
@@ -157,23 +159,265 @@ def nutrition_totals(user, start, end):
 
 
 def weekly_volume(user):
-    result = {}
-    for item in (
+    """Direct/indirect completed sets per muscle over the last 7 days.
+
+    Reuses muscle_summaries so muscle names are normalized the same way
+    everywhere (the old local loop double-counted differently-spelled
+    muscle names and re-implemented the same query). Keys keep the
+    display-style Title case the volume table has always used.
+    """
+    from .muscles import muscle_summaries
+    summaries = muscle_summaries(user, days=7)
+    return {m.title(): v for m, v in summaries.items()}
+
+
+def _rest_weekdays(user):
+    """Set of weekday numbers (Mon=0) the current fixed plan schedules as
+    Rest. Rotation plans have no fixed rest weekdays (the rest day rotates
+    with completion), so they contribute nothing here."""
+    plan = WorkoutPlan.objects.filter(user=user).first()
+    if not plan or plan.schedule_type != "fixed":
+        return set()
+    return {
+        int(k)
+        for k, v in (plan.schedule or {}).items()
+        if str(v).strip().lower() == "rest"
+    }
+
+
+def training_activity(user, days=371):
+    """Day-level training activity for the GitHub-style heatmap and streak.
+
+    Returns {'weeks': [[{iso, level, title} × 7] × N], 'streak': int}.
+    A day counts as trained when at least one non-warmup set was completed
+    (a session started but abandoned mid-way does not count).
+    Planned REST days (fixed schedule) neither break the streak nor render
+    as empty gaps: level 'rest' marks them distinctly.
+    """
+    since = timezone.now() - timedelta(days=days)
+    # TruncDate defaults to the DB session timezone (UTC on this server);
+    # pass the app timezone so a 00:00–06:59 Bangkok session lands on the
+    # correct local day in the heatmap/streak.
+    local_tz = timezone.get_current_timezone()
+    rows = list(
         WorkoutSet.objects.filter(
             session__user=user,
-            session__started_at__gte=timezone.now() - timedelta(days=7),
+            session__started_at__gte=since,
             completed=True,
         )
         .exclude(set_type="warmup")
-        .select_related("exercise")
-    ):
-        for field, label in [
-            ("primary_muscles", "direct"),
-            ("secondary_muscles", "indirect"),
-        ]:
-            for muscle in getattr(item.exercise, field):
-                result.setdefault(muscle, {"direct": 0, "indirect": 0})[label] += 1
-    return result
+        .annotate(day=db_functions.TruncDate("session__started_at", tz=local_tz))
+        .values("day")
+        .annotate(sets=Count("id"))
+    )
+    # Completed cardio entries count as training days too (a cardio-only
+    # session was still a training day — the heatmap previously missed it).
+    rows += list(
+        WorkoutCardio.objects.filter(
+            session__user=user,
+            session__started_at__gte=since,
+            completed=True,
+        )
+        .annotate(day=db_functions.TruncDate("session__started_at", tz=local_tz))
+        .values("day")
+        .annotate(sets=Count("id"))
+    )
+    dates = {}
+    for row in rows:
+        key = row["day"].isoformat()
+        dates[key] = dates.get(key, 0) + row["sets"]
+
+    rest_weekdays = _rest_weekdays(user)
+
+    def level(sets, day):
+        if sets:
+            return min(4, 1 if sets <= 3 else 2 if sets <= 9 else 3 if sets <= 16 else 4)
+        return "rest" if day.weekday() in rest_weekdays else 0
+
+    today = timezone.localdate()
+    # Grid starts 52 weeks back, on the week's Monday, so today ends the
+    # last column. Leading/trailing cells outside the window stay level 0.
+    start = today - timedelta(days=today.weekday() + 7 * 52)
+    weeks = []
+    cursor = start
+    while cursor <= today:
+        week = []
+        for _ in range(7):
+            iso = cursor.isoformat()
+            sets = dates.get(iso, 0)
+            day_level = level(sets, cursor)
+            title = f"{cursor.strftime('%d %b %Y')}: {sets} sets" if sets else (
+                f"{cursor.strftime('%d %b %Y')}: rest day (planned)"
+                if day_level == "rest" else cursor.strftime("%d %b %Y")
+            )
+            week.append({"iso": iso, "level": day_level, "title": title})
+            cursor += timedelta(days=1)
+            if cursor > today and len(week) < 7:
+                # Pad the final column to keep rows aligned.
+                while len(week) < 7:
+                    week.append({"iso": "", "level": 0, "title": ""})
+                break
+        weeks.append(week)
+
+    # Streak: consecutive days that were either trained or a PLANNED rest
+    # day (frozen, not broken). An unplanned skip breaks it. Today does not
+    # break the streak while the day is still in progress.
+    streak = 0
+    day = today
+    first = True
+    while True:
+        trained = day.isoformat() in dates
+        planned_rest = day.weekday() in rest_weekdays
+        if not trained and not planned_rest:
+            if not first:
+                break
+            # Today not trained yet: start judging from yesterday.
+            first = False
+            day -= timedelta(days=1)
+            continue
+        if trained:
+            streak += 1
+        first = False
+        day -= timedelta(days=1)
+    return {"weeks": weeks, "streak": streak}
+
+
+E1RM = "epley"  # est. 1RM formula used across the app
+
+
+def estimate_1rm(weight, reps):
+    """Epley: w × (1 + reps/30). Returns None for unusable input."""
+    if not weight or not reps:
+        return None
+    return round(float(weight) * (1 + reps / 30.0), 1)
+
+
+def personal_records(user, days=365):
+    """Best completed working set per strength exercise, newest first.
+
+    Returns a list of {exercise, weight, reps, e1rm, date, top_sets} where
+    top_sets lists the five heaviest completed working sets by e1RM.
+    Bounded to the last `days` (default a year) and fetches only the
+    columns needed — this used to load every historical set with full
+    exercise/session rows on each PR-page view.
+    """
+    since = timezone.now() - timedelta(days=days)
+    rows = list(
+        WorkoutSet.objects.filter(
+            session__user=user,
+            session__started_at__gte=since,
+            completed=True,
+            set_type="working",
+            exercise__activity_type="strength",
+            exercise__archived=False,
+        )
+        .exclude(weight__isnull=True)
+        .annotate(started=F("session__started_at"), ex_name=F("exercise__name"))
+        .values(
+            "id", "exercise_id", "ex_name", "weight", "reps",
+            "rpe", "rir", "started",
+        )
+        .order_by("started")
+    )
+    # Per-exercise RIR/RPE for the effort strip: last N logged efforts in
+    # chronological order (RPE 10/RIR 0 = hardest).
+    effort_by_exercise = {}
+    by_exercise = {}
+    for r in rows:
+        if r["rpe"] is not None or r["rir"] is not None:
+            effort_by_exercise.setdefault(r["exercise_id"], []).append(
+                {"date": timezone.localdate(r["started"]).isoformat(),
+                 "rpe": float(r["rpe"]) if r["rpe"] is not None else None,
+                 "rir": float(r["rir"]) if r["rir"] is not None else None}
+            )
+        e1rm = estimate_1rm(r["weight"], r["reps"])
+        if e1rm is None:
+            continue
+        by_exercise.setdefault(r["exercise_id"], []).append(
+            {"row": r, "e1rm": e1rm}
+        )
+    records = []
+    for entries in by_exercise.values():
+        best = max(entries, key=lambda e: (e["e1rm"], e["row"]["weight"]))
+        top = sorted(entries, key=lambda e: (-e["e1rm"], -e["row"]["weight"]))[:5]
+        r = best["row"]
+        # Daily best e1RM over time for the progress chart (most recent 20
+        # points; one point per session day keeps the line readable).
+        by_day = {}
+        for e in entries:
+            day = timezone.localdate(e["row"]["started"])
+            if day not in by_day or e["e1rm"] > by_day[day]:
+                by_day[day] = e["e1rm"]
+        progress = [
+            {"date": d.isoformat(), "e1rm": v} for d, v in sorted(by_day.items())
+        ][-20:]
+        # Precomputed SVG polyline points (viewBox 400×110) so the template
+        # stays math-free: x spread across 10..390, y from e1RM range.
+        chart = ""
+        if len(progress) > 1:
+            values = [p["e1rm"] for p in progress]
+            lo, hi = min(values), max(values)
+            span = (hi - lo) or 1.0
+            step = 380.0 / (len(progress) - 1)
+            pts = [
+                f"{round(10 + i * step)},{round(100 - (v - lo) / span * 88)}"
+                for i, v in enumerate(values)
+            ]
+            chart = " ".join(pts)
+        records.append(
+            {
+                # Lightweight stand-in for the Exercise row: only pk/name/
+                # activity label are used by the PR templates.
+                "exercise": SimpleNamespace(
+                    pk=r["exercise_id"],
+                    name=r["ex_name"],
+                    get_activity_type_display="Strength / weights",
+                ),
+                "weight": float(r["weight"]),
+                "reps": r["reps"],
+                "e1rm": best["e1rm"],
+                "date": timezone.localdate(r["started"]),
+                "progress": progress,
+                "chart": chart,
+                "effort": effort_by_exercise.get(r["exercise_id"], [])[-8:],
+                "top_sets": [
+                    {
+                        "weight": float(e["row"]["weight"]),
+                        "reps": e["row"]["reps"],
+                        "e1rm": e["e1rm"],
+                        "date": timezone.localdate(e["row"]["started"]),
+                    }
+                    for e in top
+                ],
+            }
+        )
+    records.sort(key=lambda r: r["date"], reverse=True)
+    return records
+
+
+def is_personal_record(user, exercise_id, weight, reps):
+    """True when (weight, reps, e1RM) beats every earlier completed working
+    set of this exercise. Used to celebrate new PRs on set completion.
+    The previous e1RM maximum is computed in SQL (no full set scan)."""
+    e1rm = estimate_1rm(weight, reps)
+    if e1rm is None:
+        return False
+    best = (
+        WorkoutSet.objects.filter(
+            session__user=user,
+            exercise_id=exercise_id,
+            completed=True,
+            set_type="working",
+        )
+        .exclude(weight__isnull=True)
+        .aggregate(
+            max_e1rm=Max(
+                F("weight") * (Value(1.0) + F("reps") / Value(30.0)),
+                output_field=FloatField(),
+            )
+        )["max_e1rm"]
+    )
+    return e1rm > float(best or 0)
 
 
 @transaction.atomic

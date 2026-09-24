@@ -34,9 +34,11 @@ def compute_meal(items, dish_name="", strategy="components", unmatched=None, com
         fraction = float(item.get("fraction_consumed", 1.0))
         ref_key = str(item.get("ref_key") or "")
         cv = item.get("custom_values")
-        is_custom = ref_key == "custom" or item.get("custom") is True or (
-            cv and isinstance(cv, dict) and any(v is not None for v in cv.values())
-        )
+        # A reference row with hand-edited cells stays a reference row:
+        # custom_values override nutrients per cell (below); they do not
+        # turn the whole row into a custom ingredient (that discarded the
+        # row's other reference values).
+        is_custom = ref_key == "custom" or item.get("custom") is True
         if is_custom:
             # User-entered custom ingredient: values are already final for
             # the given portion — scale only by the consumed fraction.
@@ -52,6 +54,12 @@ def compute_meal(items, dish_name="", strategy="components", unmatched=None, com
                     "name_th": item.get("name_th", ""),
                     "source": "User-entered",
                     "per_100g": {k: None for k in NUTRIENTS},
+                    # Echo the raw hand-entered values so a reload of the
+                    # editable table shows exactly what the user typed.
+                    "custom_values": {
+                        k: (None if cv.get(k) in (None, "") else float(cv[k]))
+                        for k in NUTRIENTS
+                    },
                     "weight_g": weight_g,
                     "min_g": float(item.get("min_g", weight_g)),
                     "max_g": float(item.get("max_g", weight_g)),
@@ -67,12 +75,23 @@ def compute_meal(items, dish_name="", strategy="components", unmatched=None, com
             raise ValueError(f"Unknown ref_key: {item['ref_key']}")
         per = ref["per_100g"]
         scaled = compute_ingredient(ref, weight_g, fraction)
+        # Per-cell hand edits on a reference row override the scaled value
+        # for that nutrient only (blank cell = revert to reference value).
+        overrides = {}
+        if cv and isinstance(cv, dict):
+            overrides = {
+                k: (None if cv.get(k) in (None, "") else round(float(cv[k]) * fraction, 2))
+                for k in NUTRIENTS
+                if cv.get(k) not in (None, "")
+            }
+            scaled.update(overrides)
         resolved.append(
             {
                 "ref_key": item["ref_key"],
                 "name_th": item.get("name_th", ref["name_th"]),
                 "source": ref.get("source", ""),
                 "per_100g": {k: per.get(k) for k in NUTRIENTS},
+                "custom_values": overrides or None,
                 "weight_g": weight_g,
                 "min_g": float(item.get("min_g", weight_g)),
                 "max_g": float(item.get("max_g", weight_g)),
@@ -90,32 +109,35 @@ def compute_meal(items, dish_name="", strategy="components", unmatched=None, com
             for ing in resolved
             if ing["computed"][nutrient] is not None
         ]
-        # A nutrient is unknown if any ingredient >= 20g lacks it.
-        missing = any(
-            ing["computed"][nutrient] is None and ing["weight_g"] >= 20
-            for ing in resolved
-        )
-        if missing or not values:
-            totals[nutrient] = None
-            if missing:
+        # ponytail: sum the known values; a substantial (>=20g) ingredient
+        # lacking the nutrient is flagged in unknown_fields instead of
+        # voiding the whole total. Voiding let one blank custom row zero
+        # out every NOT NULL column on the entry (data loss).
+        if values:
+            totals[nutrient] = round(sum(values), 2)
+            if any(
+                ing["computed"][nutrient] is None and ing["weight_g"] >= 20
+                for ing in resolved
+            ):
                 unknown_fields.append(nutrient)
         else:
-            totals[nutrient] = round(sum(values), 2)
+            totals[nutrient] = None
+            unknown_fields.append(nutrient)
 
-    kcal_min = round(
-        sum(
-            (ing["per_100g"]["kcal"] or 0) * ing["min_g"] / 100.0 * ing.get("fraction_consumed", 1.0)
-            for ing in resolved
-        ),
-        2,
-    )
-    kcal_max = round(
-        sum(
-            (ing["per_100g"]["kcal"] or 0) * ing["max_g"] / 100.0 * ing.get("fraction_consumed", 1.0)
-            for ing in resolved
-        ),
-        2,
-    )
+    def _kcal_at(ing, grams):
+        # Custom rows carry hand-entered kcal for the portion (already
+        # fraction-scaled); reference rows scale per_100g by min/max grams.
+        if ing.get("custom"):
+            return ing["computed"]["kcal"] or 0
+        return (
+            (ing["per_100g"]["kcal"] or 0)
+            * grams
+            / 100.0
+            * ing.get("fraction_consumed", 1.0)
+        )
+
+    kcal_min = round(sum(_kcal_at(ing, ing["min_g"]) for ing in resolved), 2)
+    kcal_max = round(sum(_kcal_at(ing, ing["max_g"]) for ing in resolved), 2)
 
     # Completeness: major unmatched items make the meal incomplete.
     complete = completeness != "incomplete" and not any(

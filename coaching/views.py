@@ -1,5 +1,6 @@
 import json
 import os
+from django.contrib.auth import get_user_model
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.core.exceptions import ValidationError
@@ -16,7 +17,7 @@ from .push import validate_subscription
 
 @login_required
 def home(request):
-    return render(request,'coaching/home.html',{'jobs':Job.objects.filter(user=request.user).order_by('-created_at')[:15],'analyses':Analysis.objects.filter(user=request.user).select_related('job').order_by('-created_at')[:20],'suggestions':Suggestion.objects.filter(user=request.user).select_related('job').order_by('-created_at')[:30],'vapid_public':os.environ.get('VAPID_PUBLIC_KEY','')})
+    return render(request,'coaching/home.html',{'jobs':Job.objects.filter(user=request.user).order_by('-created_at')[:15],'analyses':Analysis.objects.filter(user=request.user).select_related('job').order_by('-local_date','-created_at')[:20],'suggestions':Suggestion.objects.filter(user=request.user).select_related('job').order_by('-created_at')[:30],'vapid_public':os.environ.get('VAPID_PUBLIC_KEY','')})
 @login_required
 @require_POST
 def request_analysis(request,task):
@@ -48,11 +49,25 @@ def decision(request,pk):
 @require_POST
 def food(request,pk):
     entry=get_object_or_404(FoodEntry,pk=pk,user=request.user)
-    try: enqueue_food(request.user,entry);messages.success(request,'Food analysis queued. Estimates remain editable in Nutrition.')
+    reestimate=request.POST.get('reestimate')=='1'
+    try:
+        enqueue_food(request.user,entry,reestimate=reestimate)
+        messages.success(request,'Food analysis queued. Estimates remain editable in Nutrition.')
     except ValidationError as exc: messages.error(request,' '.join(exc.messages))
     return redirect('coaching:home')
+def _is_owner(user):
+    """The first created account is the single owner (bootstrap_owner
+    semantics): only the owner may discover/test AI providers and change
+    routing — these actions spend credit and affect every account."""
+    first = get_user_model().objects.order_by('pk').values_list('pk', flat=True).first()
+    return user is not None and user.pk == first
+
+
 @login_required
 def settings_view(request):
+    if not _is_owner(request.user):
+        messages.error(request, 'Only the owner can manage AI models and routing.')
+        return redirect('coaching:home')
     if request.method=='POST':
         try:
             action=request.POST.get('action')
@@ -89,6 +104,11 @@ def subscribe(request):
         if data.get('revoke'):
             PushSubscription.objects.filter(user=request.user,endpoint=endpoint).delete()
         else:
+            # A globally-unique endpoint owned by ANOTHER user must not be
+            # silently taken over (restore/import edge case): reject it.
+            existing=PushSubscription.objects.filter(endpoint=endpoint).first()
+            if existing and existing.user_id!=request.user.id:
+                return JsonResponse({'error':'Endpoint belongs to another account'},status=400)
             PushSubscription.objects.update_or_create(endpoint=endpoint,defaults={'user':request.user,'keys':keys})
         return JsonResponse({'ok':True})
     except (ValidationError,ValueError,TypeError): return JsonResponse({'error':'Invalid push subscription'},status=400)

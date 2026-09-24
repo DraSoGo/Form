@@ -31,7 +31,7 @@ def providers():
 def request(provider,path,payload=None):
     if not provider.key: raise ProviderError('key_not_configured')
     try:
-        with httpx.Client(timeout=httpx.Timeout(45,connect=8),follow_redirects=False) as client:
+        with httpx.Client(timeout=httpx.Timeout(90,connect=8),follow_redirects=False) as client:
             response = client.request('GET' if payload is None else 'POST',provider.base_url+path,
                 headers={'Authorization':'Bearer '+provider.key,'anthropic-version':'2023-06-01'},json=payload)
     except httpx.HTTPError: raise ProviderError('network_or_timeout') from None
@@ -54,6 +54,10 @@ def request(provider,path,payload=None):
 
 def complete(provider,model,system,prompt,image=None,max_tokens=2200):
     data_url = 'data:'+image[0]+';base64,'+base64.b64encode(image[1]).decode() if image else None
+    # Gateway faults observed 2026-09-23: long "thinking" responses (>60s)
+    # come back with usage but no content. Low reasoning effort keeps food
+    # vision answers well inside that window. Env-overridable per pool.
+    reasoning_effort=os.environ.get('AI_REASONING_EFFORT','low')
     if provider.protocol == 'messages':
         content = [{'type':'text','text':prompt}]
         if image: content.append({'type':'image','source':{'type':'base64','media_type':image[0],'data':base64.b64encode(image[1]).decode()}})
@@ -64,11 +68,18 @@ def complete(provider,model,system,prompt,image=None,max_tokens=2200):
         content = [{'type':'input_text','text':prompt}]
         if image: content.append({'type':'input_image','image_url':data_url})
         data = request(provider,'/responses',dict(model=model,instructions=system,input=[{'role':'user','content':content}],max_output_tokens=max_tokens,store=False,stream=False))
-        try: return ''.join(c['text'] for item in data['output'] for c in item.get('content',[]) if c.get('type')=='output_text')
+        try: text=''.join(c['text'] for item in data['output'] for c in item.get('content',[]) if c.get('type')=='output_text')
         except (KeyError,TypeError,AttributeError): raise ProviderError('invalid_response',False) from None
+        # Gateway intermittently returns status completed with an empty
+        # output list while usage shows tokens were produced — a transient
+        # upstream fault, so failover to the next candidate instead of
+        # returning an empty string that fails schema validation.
+        if not text.strip(): raise ProviderError('empty_response')
+        return text
     content = [{'type':'text','text':prompt}]
     if image: content.append({'type':'image_url','image_url':{'url':data_url}})
-    data = request(provider,'/chat/completions',dict(model=model,messages=[{'role':'system','content':system},{'role':'user','content':content}],max_tokens=max_tokens,stream=False))
+    extra={'reasoning_effort':reasoning_effort} if reasoning_effort else {}
+    data = request(provider,'/chat/completions',dict(model=model,messages=[{'role':'system','content':system},{'role':'user','content':content}],max_tokens=max_tokens,stream=False,**extra))
     try:
         result=data['choices'][0]['message']['content']
         if not isinstance(result,str): raise TypeError()

@@ -331,17 +331,22 @@ input::placeholder, textarea::placeholder { color: var(--muted); }
 input:hover, select:hover, textarea:hover { border-color: var(--primary); }
 
 input[type=checkbox], input[type=radio] {
-  /* Reset the global input appearance:none — without it the browser draws
-     no checkmark, so ticking appears to do nothing. */
+  /* Full reset of the global text-input rule above (width:100%, padding,
+     min-height, background): a checkbox must stay a small native control.
+     The old reset missed padding/background, so checkboxes rendered as
+     large flat gray squares (surface-2 painted over the native check). */
   -webkit-appearance: auto;
   appearance: auto;
-  width: 20px;
-  height: 20px;
-  min-height: 20px;
+  width: 19px;
+  height: 19px;
+  min-height: 19px;
+  min-width: 19px;
+  padding: 0;
   margin: 0 8px 0 0;
   vertical-align: middle;
   accent-color: var(--primary);
-  background: var(--surface-2);
+  background: transparent;
+  border: none;
   border-radius: 4px;
 }
 input[type=file] { overflow: hidden; padding: 10px 12px; }
@@ -1870,6 +1875,22 @@ nav a[aria-current="page"]::after {
 }
 
 /* Analysis history articles */
+.analysis-day {
+  border-top: 1px solid var(--border);
+  padding: 8px 0 10px;
+}
+.analysis-day:first-of-type { border-top: 0; }
+.analysis-day > summary {
+  font-size: 14px;
+  font-weight: 700;
+  min-height: 32px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+}
+.analysis-day .analysis { padding: 10px 0; }
+.analysis-day .analysis:first-child { border-top: 0; padding-top: 2px; }
 .analysis {
   border-top: 1px solid var(--border);
   padding: 14px 0;
@@ -2013,63 +2034,71 @@ nav a[aria-current="page"]::after {
   gap: 0;
   border-top: 1px solid var(--border);
 }
+/* =========================================================================
+   Food diary entries
+   -------------------------------------------------------------------------
+   DOM: li.food-row > details.food-details > summary.food-summary
+        summary children (exactly five): .food-select (checkbox),
+        .food-name, .food-macros, .food-kcal (value+range+chips), .food-chevron
+   Base styles serve the mobile stacked card; >= 768px the summary becomes
+   ONE explicit five-column grid row (no auto-placement).
+   ========================================================================= */
 .food-row {
   border-bottom: 1px solid var(--border);
-  display: flex;
-  align-items: stretch;
-  gap: 0;
+  background: var(--surface);
 }
+.food-row .food-details { min-width: 0; position: relative; }
+
+.food-row .food-summary {
+  display: grid;
+  /* Mobile base: three stacked areas. */
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-areas:
+    "select select"
+    "name   kcal"
+    "chips  chips";
+  row-gap: 4px;
+  column-gap: 10px;
+  padding: 6px 12px 12px;
+  color: var(--ink);
+  list-style: none;
+  cursor: pointer;
+}
+.food-row .food-summary::-webkit-details-marker { display: none; }
+/* The global summary::after "+" must not become a stray grid item here. */
+.food-row .food-summary::after { content: none; }
+
 .food-row .food-select {
-  /* 44px tap target wrapping the checkbox — the whole area toggles. */
+  grid-area: select;
   display: flex;
   align-items: center;
-  justify-content: center;
-  min-width: 48px;
-  align-self: stretch;
+  gap: 10px;
+  min-height: 44px;
+  padding: 6px 0 0;
   cursor: pointer;
-  flex: 0 0 auto;
+  -webkit-tap-highlight-color: transparent;
+}
+.food-select-label {
+  font-size: 13px;
+  color: var(--muted);
+  white-space: nowrap;
 }
 .food-row .food-checkbox {
-  width: 22px;
-  height: 22px;
+  width: 19px;
+  height: 19px;
   margin: 0;
   flex: 0 0 auto;
   accent-color: var(--primary);
 }
-.food-row .food-details {
-  flex: 1 1 auto;
-  margin: 0;
-  min-width: 0;
-}
-.food-row .food-summary {
-  display: grid;
-  grid-template-columns: 1fr auto auto auto auto;
-  align-items: center;
-  gap: 12px;
-  padding: 14px 14px 14px 4px;
-  min-height: 56px;
-  color: var(--ink);
-  list-style: none;
-}
-/* The global summary::after "+" must not become a stray grid item here. */
-.food-row .food-summary::after { content: none; }
-.food-row .food-summary::-webkit-details-marker { display: none; }
-.food-row .food-chevron {
-  width: 18px;
-  height: 18px;
-  color: var(--muted);
-  flex: 0 0 auto;
-  transition: transform .2s ease;
-}
-.food-row details[open] .food-chevron {
-  transform: rotate(90deg);
-  color: var(--primary-hover);
-}
+
 .food-row .food-name {
+  grid-area: name;
   display: flex;
   flex-direction: column;
   gap: 2px;
   min-width: 0;
+  /* reserve the chevron strip on mobile so kcal text never hides under it */
+  padding-right: 38px;
   color: var(--ink);
   text-decoration: none;
 }
@@ -2078,9 +2107,13 @@ nav a[aria-current="page"]::after {
   color: var(--ink);
   text-decoration: underline;
   text-underline-offset: 4px;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
   overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 .food-row .food-name small {
   color: var(--muted);
@@ -2088,72 +2121,164 @@ nav a[aria-current="page"]::after {
   font-weight: 500;
 }
 .food-row .food-macros {
+  grid-area: chips;
   font-size: 12px;
   color: var(--muted);
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
 .food-row .food-kcal {
-  font-family: var(--font-display);
-  font-weight: 700;
-  font-size: 15px;
+  grid-area: kcal;
+  display: grid;
+  justify-items: end;
+  gap: 2px;
+  text-align: right;
   font-variant-numeric: tabular-nums;
-  color: var(--ink);
-  white-space: nowrap;
+}
+.food-kcal-value { font-size: 15px; font-weight: 650; color: var(--ink); }
+.food-row .food-kcal .food-kcal-range {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--muted);
 }
 .food-row .food-chip {
-  flex: 0 0 auto;
-}
-.food-row details[open] .food-summary { background: var(--highlight); }
-.food-row .food-detail {
-  padding: 0 14px 14px;
-  border-top: 1px dashed var(--border);
-  margin-top: 0;
-}
-.food-row .food-detail-inner {
-  padding-top: 12px;
-  display: grid;
-  gap: 10px;
-}
-.food-row .food-detail dl {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
-  gap: 6px 16px;
-  margin: 0;
-}
-.food-row .food-detail dt {
-  font-size: 11px;
-  letter-spacing: 1.2px;
-  text-transform: uppercase;
-  color: var(--muted);
-  margin: 0;
-  font-weight: 700;
-}
-.food-row .food-detail dd {
-  margin: 0;
-  font-variant-numeric: tabular-nums;
-  color: var(--ink);
-  font-weight: 600;
-}
-.food-row .food-detail .uncertainty {
-  font-size: 13px;
-  color: var(--muted);
-  margin: 0;
-}
-.food-row .food-detail .actions-row {
   display: flex;
   flex-wrap: wrap;
-  gap: 10px;
-  align-items: center;
-  margin-top: 4px;
+  gap: 6px;
+  justify-content: flex-start;
+  justify-self: end;
 }
-.food-row .food-detail .photo-link {
-  font-size: 14px;
-  font-weight: 600;
+.food-row .food-chevron {
+  position: absolute;
+  right: 10px;
+  top: 16px;
+  width: 18px;
+  height: 18px;
+  color: var(--muted);
+  transition: transform .2s ease;
+}
+.food-row details[open] .food-chevron {
+  transform: rotate(90deg);
   color: var(--primary-hover);
-  text-decoration: none;
 }
-.food-row .food-detail .photo-link:hover { text-decoration: underline; }
+.food-row .food-detail { padding: 0 12px 12px; }
+
+/* ── Desktop / tablet (>= 768px): one explicit summary grid row ────── */
+@media (min-width: 768px) {
+  .food-row .food-summary {
+    /* Five named columns; every child placed on row 1 explicitly —
+       no auto-placement, no stray rows. The macros track sizes to its
+       nowrap content (min 180px) so the P/C/F line can never spill left
+       into the title column. */
+    display: grid;
+    grid-template-columns: 32px minmax(0, 1fr) minmax(180px, max-content) 150px 24px;
+    grid-template-areas: "select name macros kcal chev";
+    align-items: center;
+    column-gap: 16px;
+    min-height: 76px;
+    padding: 12px 12px;
+  }
+  /* Checkbox: compact square, label visually hidden (aria-label kept). */
+  .food-row .food-select {
+    grid-area: select;
+    min-height: 32px;
+    padding: 0;
+    justify-content: center;
+    align-self: center;
+  }
+  .food-select-label {
+    position: absolute;
+    width: 1px; height: 1px;
+    margin: -1px; padding: 0; border: 0;
+    clip: rect(0 0 0 0); clip-path: inset(50%);
+    overflow: hidden; white-space: nowrap;
+  }
+  .food-row .food-name {
+    grid-area: name;
+    padding-right: 0;   /* chevron has its own column now */
+    overflow: hidden;   /* hard stop at the column edge; clamp handles lines */
+  }
+  .food-row .food-name strong { font-size: 15.5px; line-height: 1.4; }
+  .food-row .food-macros {
+    grid-area: macros;
+    justify-self: end;
+    font-size: 13px;
+  }
+  .food-row .food-kcal {
+    grid-area: kcal;
+    justify-items: end;
+    gap: 3px;
+  }
+  .food-kcal-value { font-size: 16px; }
+  .food-row .food-kcal .food-kcal-range { justify-self: end; }
+  .food-row .food-chip { justify-content: flex-end; }
+  .food-row .food-chevron {
+    grid-area: chev;
+    position: static;
+    align-self: center;
+    justify-self: center;
+  }
+
+  /* ── Expanded detail panel: compact full-width metrics grid ──────── */
+  .food-row .food-detail { padding: 2px 14px 16px 60px; }
+  .food-row .food-detail-inner { display: grid; gap: 10px; }
+  .food-row .food-detail dl {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 8px 18px;
+    margin: 0;
+  }
+  .food-row .food-detail dl > div { display: grid; gap: 1px; }
+  .food-row .food-detail dt {
+    font-size: 11.5px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: .04em;
+    color: var(--muted);
+  }
+  .food-row .food-detail dd {
+    margin: 0;
+    font-size: 15px;
+    font-weight: 650;
+    color: var(--ink);
+    font-variant-numeric: tabular-nums;
+  }
+  .food-row .food-detail .uncertainty { margin: 0; font-size: 12.5px; }
+  .food-row .food-detail .actions-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+  }
+  .food-row .food-detail .actions-row form { margin: 0; }
+  .food-row .food-detail .actions-row .button,
+  .food-row .food-detail .actions-row button { width: auto; }
+
+  /* Intermediate (768–1023px): drop macros under the title so nothing
+     overlaps; kcal group + chevron keep their columns. */
+  @media (max-width: 1023px) {
+    .food-row .food-summary {
+      grid-template-columns: 32px minmax(0, 1fr) 140px 24px;
+      grid-template-areas:
+        "select name kcal   chev"
+        "select macros macros chev";
+      row-gap: 2px;
+    }
+    .food-row .food-macros {
+      justify-self: start;
+      align-self: start;
+    }
+    /* Narrower desktop: 3 metric columns. */
+    .food-row .food-detail dl { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    .food-row .food-detail { padding: 2px 14px 14px 60px; }
+  }
+}
+
+/* Wide-desktop extra: keep 4 columns at >= 1100px where they breathe. */
+@media (min-width: 1024px) and (max-width: 1099px) {
+  .food-row .food-detail dl { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+
 
 /* =========================================================================
    Touch targets & reading comfort
@@ -2193,60 +2318,33 @@ main { min-width: 0; }
   nav a { font-size: 11px; }
 
   /* ── Food diary entries as stacked cards on mobile ──
-     Desktop keeps the single-row grid (1fr auto auto auto auto).
-     Mobile: row 1 = name+date, row 2 = kcal + chips, nothing overlaps.
-     The hidden .food-macros is display:none so it consumes no cell. */
+     The base summary grid already stacks (select / name+kcal / chips);
+     here we only give the rows the card look and hide the macros line
+     (its data lives in the expanded details). */
   .food-row {
     display: block;
-    position: relative;  /* anchor for the absolutely-positioned overlays */
+    position: relative;
     border: 1px solid var(--border);
     border-radius: var(--radius);
     margin: 0 0 10px;
     background: var(--surface);
     overflow: hidden;
+    border-bottom: 1px solid var(--border);
   }
   .food-row .food-select {
-    position: absolute;  /* overlay top-left of the card, still 44px tappable */
-    top: 0; left: 0; z-index: 2;
-    width: 48px; height: 48px;
-    min-width: 48px;
-    background: transparent;
+    /* Selection on its own full-width row above the title. */
+    width: 100%;
+    min-width: 0;
+    min-height: 44px;
+    padding: 8px 12px 2px;
   }
-  .food-row .food-details { min-width: 0; }
-  .food-row .food-summary {
-    display: grid;
-    grid-template-columns: 1fr auto;
-    grid-template-areas:
-      "name   kcal"
-      "chips  chips";
-    align-items: center;
-    gap: 4px 10px;
-    padding: 14px 12px 12px 52px;  /* left space for the checkbox */
-    min-height: 64px;
-  }
-  .food-row .food-name { grid-area: name; min-width: 0; }
-  .food-row .food-name strong {
-    white-space: normal;          /* long Thai names wrap instead of overflow */
-    overflow-wrap: anywhere;
-    -webkit-line-clamp: 2;
-    line-clamp: 2;
-    display: -webkit-box;
-    -webkit-box-orient: vertical;
-    overflow: hidden;
-  }
+  .food-row .food-summary { padding: 4px 12px 12px; }
   .food-row .food-kcal {
-    grid-area: kcal;
-    text-align: right;
-    /* Text ends ~30px before the card edge; the chevron occupies that
-       reserved strip, so no pixel of kcal text sits under the chevron. */
+    /* Text ends before the card edge; the chevron occupies that strip. */
     padding-right: 38px;
     justify-self: stretch;
   }
-  .food-row .food-chip {
-    grid-area: chips;
-    display: flex; flex-wrap: wrap; gap: 6px;
-    justify-content: flex-start;
-  }
+  .food-row .food-chip { justify-content: flex-start; justify-self: start; }
   .food-row .food-chevron { position: absolute; right: 10px; top: 18px; }
   .food-row .food-macros { display: none; }
   .food-row details[open] .food-chevron {
@@ -2345,3 +2443,247 @@ main { min-width: 0; }
   .card-inner-details > summary,
   .card-inner-details > summary::after { transition: none; }
 }
+
+/* =========================================================================
+   Training activity heatmap (GitHub-style contributions)
+   ========================================================================= */
+.heatmap-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+.heatmap-head h2 { margin: 0; }
+.streak-badge {
+  margin: 0;
+  font-size: 13.5px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+.streak-badge strong {
+  color: var(--ink);
+  font-size: 16px;
+}
+.heatmap-wrap { overflow-x: auto; padding-bottom: 4px; }
+.heatmap-grid {
+  display: flex;
+  gap: 3px;
+  width: max-content;
+}
+.heatmap-col {
+  display: grid;
+  grid-template-rows: repeat(7, 11px);
+  gap: 3px;
+}
+.heat {
+  width: 11px;
+  height: 11px;
+  border-radius: 2.5px;
+  background: var(--surface-2);
+}
+/* Green scale tuned for the dark theme (AA against --surface). */
+.heat.lv1 { background: #2e4632; }
+.heat.lv2 { background: #4a7048; }
+.heat.lv3 { background: #6d8d54; }
+.heat.lv4 { background: #9cc178; }
+.heat:not(.lv0) { outline: 1px solid rgba(0,0,0,.15); outline-offset: -1px; }
+.heatmap-legend {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 8px;
+  justify-content: flex-end;
+}
+.heatmap-legend .heat { width: 10px; height: 10px; }
+@media (max-width: 640px) {
+  .heatmap-col { grid-template-rows: repeat(7, 10px); }
+  .heat { width: 10px; height: 10px; }
+}
+
+/* =========================================================================
+   Personal records — fixed-column record cards
+   ========================================================================= */
+.pr-list {
+  display: grid;
+  gap: 10px;
+  /* Extra clearance for the fixed bottom nav when the last row expands. */
+  margin-bottom: 24px;
+}
+.pr-item {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  overflow: hidden;
+}
+.pr-row {
+  /* Identical columns on every row: identity | best set | estimate | chevron.
+     Name length can never shift the value columns. */
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 118px 118px 24px;
+  align-items: center;
+  gap: 8px 16px;
+  padding: 12px 14px;
+  min-height: 60px;
+  cursor: pointer;
+  list-style: none;
+  color: var(--ink);
+}
+.pr-row::-webkit-details-marker { display: none; }
+/* Kill the global disclosure marker with BOTH shapes: the plain
+   `summary::after` (+) and the higher-specificity `details[open] >
+   summary::after` (−). The [open] variant (0,1,2) used to beat the old
+   single-class override and painted a stray − into the grid. This row's
+   only toggle is the rotating chevron. */
+details > .pr-row::after,
+details[open] > .pr-row::after { content: none; }
+.pr-row:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: -2px;
+  border-radius: var(--radius-sm);
+}
+.pr-id { min-width: 0; }
+.pr-name {
+  display: block;
+  font-weight: 650;
+  font-size: 15px;
+  overflow-wrap: anywhere;
+}
+.pr-cat {
+  display: block;
+  margin-top: 2px;
+  color: var(--muted);
+  font-size: 12px;
+}
+.pr-best, .pr-est { display: grid; gap: 1px; }
+.pr-best { text-align: right; }
+.pr-label {
+  color: var(--muted);
+  font-size: 11.5px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+}
+.pr-value { font-size: 15px; font-variant-numeric: tabular-nums; }
+.pr-est { text-align: right; }
+.pr-date { color: var(--muted); font-size: 12px; }
+.pr-chevron {
+  width: 18px;
+  height: 18px;
+  color: var(--muted);
+  justify-self: center;
+  transition: transform .2s ease;
+}
+.pr-item[open] > .pr-row .pr-chevron {
+  transform: rotate(90deg);
+  color: var(--primary-hover);
+}
+@media (prefers-reduced-motion: reduce) {
+  .pr-chevron { transition: none; }
+}
+.pr-history { padding: 0 14px 12px; }
+.pr-history-title { margin: 0 0 6px; font-size: 12.5px; }
+.pr-history table { width: 100%; font-size: 14px; }
+.pr-history th {
+  text-align: left;
+  color: var(--muted);
+  font-weight: 600;
+  font-size: 12.5px;
+  padding: 6px 8px 6px 0;
+  border-bottom: 1px solid var(--border);
+}
+.pr-history td { padding: 7px 8px 7px 0; border-bottom: 1px solid var(--border); }
+.pr-history tr:last-child td { border-bottom: 0; }
+
+/* Mobile: identity on its own full row; best (left) and estimate (right)
+   share the row below; chevron stays in its own right column. */
+@media (max-width: 640px) {
+  .pr-row {
+    grid-template-columns: minmax(0, 1fr) auto 24px;
+    grid-template-areas:
+      "id    id   chev"
+      "best  est  est ";
+    align-items: start;   /* top-aligned blocks: labels sit on one line */
+    row-gap: 10px;
+    padding: 12px;
+  }
+  .pr-id { grid-area: id; }
+  .pr-best { grid-area: best; text-align: left; }
+  .pr-est { grid-area: est; }
+  .pr-chevron { grid-area: chev; align-self: start; margin-top: 3px; }
+}
+
+/* PR progress chart inside expanded history */
+.pr-chart {
+  display: block;
+  width: 100%;
+  max-width: 480px;
+  height: auto;
+  margin: 4px 0 2px;
+  color: var(--primary);
+}
+.pr-history .chart-labels { margin: 0 0 10px; font-size: 12px; }
+
+/* RIR/RPE effort strip inside PR history */
+.pr-effort {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin: 2px 0 4px;
+}
+.pr-effort-label { font-size: 11.5px; margin-right: 4px; }
+.effort-dot {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 26px;
+  height: 22px;
+  padding: 0 5px;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink);
+}
+.effort-dot.light  { background: #2e4632; }   /* same greens as heatmap */
+.effort-dot.medium { background: #6d8d54; }
+.effort-dot.hard   { background: #a8663f; }   /* amber-brown: very hard */
+.effort-dot.none   { background: var(--surface-2); color: var(--muted); }
+.pr-effort-hint { margin: 0 0 10px; font-size: 12px; }
+
+/* Planned rest day (fixed schedule): distinct from an empty gap —
+   a subtle outlined square, keeps the "rest is part of the plan" story. */
+.heat.rest {
+  background: transparent;
+  outline: 1px dashed var(--border);
+  outline-offset: -1px;
+}
+
+
+/* =========================================================================
+   Trend chart interactive points + tooltip
+   ========================================================================= */
+.chart-point { cursor: pointer; outline: none; }
+.chart-point circle { fill: currentColor; opacity: 0; transition: opacity .12s ease; }
+.chart-point:hover circle,
+.chart-point:focus circle,
+.chart-point.is-active circle { opacity: 1; }
+.chart-point:focus circle { stroke: var(--primary); stroke-width: 2; }
+.chart-tip {
+  position: absolute;
+  padding: 4px 10px;
+  font-size: 12.5px;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  pointer-events: none;
+  opacity: 0;
+  white-space: nowrap;
+  z-index: 3;
+}
+.chart-tip:not(:empty) { opacity: 1; }
+/* Cards containing charts need relative positioning for the tooltip. */
+#charts .card { position: relative; }
